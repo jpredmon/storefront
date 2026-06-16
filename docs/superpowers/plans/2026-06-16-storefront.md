@@ -1364,62 +1364,27 @@ storefront/
 - Create: migration (via generator)
 - Create: `test/fixtures/admin_users.yml`
 
-- [ ] **Step 1: Install Devise**
+- [x] **Steps 1–5: Already completed during Task 4**
 
-  ```
-  rails generate devise:install
-  ```
+  > All Devise generator steps (install, generate AdminUser, migrate, lock modules, fixture) were done during Task 4 because `devise_for :admin_users` in routes.rb required the model to exist before routes could load. See memory note `project_task11_split.md`.
 
-  Open `config/environments/development.rb` and add inside the `Rails.application.configure do` block:
-  ```ruby
-  config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
-  ```
+  Verified at Task 11:
+  - `AdminUser` model exists with `:database_authenticatable, :rememberable, :validatable`
+  - `admin_users` table exists (`AdminUser.count` returns 0)
+  - Devise 5.0.4 installed (above 4.9 threshold)
+  - Fixture has static bcrypt hash
+  - Full suite: 38 runs, 68 assertions, 0 failures
 
-- [ ] **Step 2: Generate AdminUser model**
-
-  ```
-  rails generate devise AdminUser
-  ```
-
-- [ ] **Step 3: Run migration**
-
-  ```
-  rails db:migrate
-  ```
-
-- [ ] **Step 4: Lock down Devise to login/logout only**
-
-  Open the generated migration and verify it created the `admin_users` table. Then open `app/models/admin_user.rb` and replace with:
-  ```ruby
-  class AdminUser < ApplicationRecord
-    devise :database_authenticatable, :rememberable, :validatable
-  end
-  ```
-  (Removes `:recoverable`, `:confirmable`, etc. — we don't have email set up.)
-
-- [ ] **Step 5: Write the admin_users fixture**
-
-  Create `test/fixtures/admin_users.yml`:
-  ```yaml
-  one:
-    email: admin@storefront.test
-    encrypted_password: $2a$12$8lQ.emZOsYvXUlNiOS/B0.SZ6kg6KmTLIjMQqEueL0aQ8TKD1xfz.
-  ```
-  > **Note:** Use a static pre-computed hash, not `<%= BCrypt::Password.create(...) %>`. BCrypt is not loaded in the fixture ERB rendering context and will raise `NameError`.
-
-- [ ] **Step 6: Commit**
-
-  ```
-  git add .
-  git commit -m "feat: install Devise and generate AdminUser"
-  ```
+- [x] **Step 6: No commit needed** — no changes to make.
 
 ### Adversarial Audit — Task 11
 
-- **Verify Devise version in Gemfile.lock is >= 4.9:** `grep "devise " Gemfile.lock`. If it's below 4.9, the logout link using `data: { turbo_method: :delete }` will not work correctly — Devise's Turbo support was added in 4.9.0.
-- **`rails generate devise:install` outputs instructions you must not skip:** Specifically, it tells you to add `config.action_mailer.default_url_options` to `development.rb`. Add it even though we have no mailer — Devise's own confirmable/recoverable modules reference it and will warn without it. We've disabled those modules, but the warning still appears and can obscure real errors in the log.
-- **The `admin_users.yml` fixture uses `BCrypt::Password.create`:** This is evaluated at test setup time, not at fixture load time. If `bcrypt` is not in the bundle (it's a Devise dependency, so it should be), every test that touches admin fixtures will fail with `NameError: uninitialized constant BCrypt`. Confirm `bundle list | grep bcrypt` shows it present after Task 3's `bundle install`.
-- **Downstream risk:** If `authenticate_admin_user!` is not correctly wired in Task 12's BaseController, every admin route is publicly accessible with no error. The test that checks for redirect-to-login is the only gate — run it and read the output, don't just count assertions.
+- **Devise 5.0.4 confirmed** — well above 4.9 threshold for Turbo support.
+- **ActionMailer config skipped** — app was generated with `--skip-action-mailer`, so `config.action_mailer.default_url_options` doesn't apply. Recoverable/confirmable modules removed.
+- **Fixture uses static bcrypt hash** (not ERB `BCrypt::Password.create`) — correct.
+- **Downstream risk remains:** `authenticate_admin_user!` must be wired in Task 12's BaseController.
+
+**Confidence: 100/100** — all steps verified as already complete, full suite green, no changes needed.
 
 ---
 
@@ -1434,17 +1399,19 @@ storefront/
 - Create: `app/views/admin/products/_form.html.erb`
 - Create: `test/controllers/admin/products_controller_test.rb`
 
-- [ ] **Step 1: Write Admin::BaseController**
+- [x] **Step 1: Write Admin::BaseController**
+
+  > **Deviation from original plan:** `devise_for :admin_users` inside `namespace :admin` creates Devise mapping `admin_admin_user`, so the auth helper is `authenticate_admin_admin_user!` (double-admin), not `authenticate_admin_user!`. The plan's version caused `NoMethodError` on all admin routes.
 
   Create `app/controllers/admin/base_controller.rb`:
   ```ruby
   class Admin::BaseController < ApplicationController
     layout "admin"
-    before_action :authenticate_admin_user!
+    before_action :authenticate_admin_admin_user!
   end
   ```
 
-- [ ] **Step 2: Write Admin::ProductsController**
+- [x] **Step 2: Write Admin::ProductsController**
 
   Create `app/controllers/admin/products_controller.rb`:
   ```ruby
@@ -1494,7 +1461,7 @@ storefront/
 
   Note: `price` (not `price_cents`) is permitted because the Product model's virtual `price=` setter handles the conversion.
 
-- [ ] **Step 3: Write the shared form partial**
+- [x] **Step 3: Write the shared form partial**
 
   Create `app/views/admin/products/_form.html.erb`:
   ```erb
@@ -1536,7 +1503,7 @@ storefront/
   <% end %>
   ```
 
-- [ ] **Step 4: Write the index view**
+- [x] **Step 4: Write the index view**
 
   Create `app/views/admin/products/index.html.erb`:
   ```erb
@@ -1574,7 +1541,7 @@ storefront/
   <% end %>
   ```
 
-- [ ] **Step 5: Write new and edit views**
+- [x] **Step 5: Write new and edit views**
 
   Create `app/views/admin/products/new.html.erb`:
   ```erb
@@ -1588,7 +1555,7 @@ storefront/
   <%= render "form", product: @product %>
   ```
 
-- [ ] **Step 6: Write the failing admin controller tests**
+- [x] **Step 6: Write the admin controller tests**
 
   Create `test/controllers/admin/products_controller_test.rb`:
   ```ruby
@@ -1647,14 +1614,16 @@ storefront/
   include Devise::Test::IntegrationHelpers
   ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
   ```
   rails test test/controllers/admin/products_controller_test.rb
   ```
-  Expected: `5 runs, 6 assertions, 0 failures, 0 errors`
+  Result: `5 runs, 20 assertions, 0 failures, 0 errors`
 
-- [ ] **Step 8: Commit**
+  Full suite: `43 runs, 88 assertions, 0 failures, 0 errors`
+
+- [x] **Step 8: Commit**
 
   ```
   git add .
@@ -1664,8 +1633,14 @@ storefront/
 ### Adversarial Audit — Task 12
 
 - **`price` (not `price_cents`) is the permitted param in `product_params`.** This relies on the `price=` virtual setter on `Product` to convert dollars to cents. If someone accidentally changes this to `price_cents`, the admin form will bypass the conversion and store raw float values (e.g. `29.99` instead of `2999`). The PATCH test specifically asserts `price_cents == 2999` — this is the guard.
-- **`sign_in @admin` in tests requires `include Devise::Test::IntegrationHelpers` in `test/test_helper.rb`.** If this line is missing, every test that calls `sign_in` fails with `NoMethodError` — not a Devise error, just an undefined method. Easy to miss; add it before running any admin test.
-- **The admin layout uses `destroy_admin_user_session_path`.** This route only exists after `devise_for :admin_users` is declared inside the `namespace :admin` block in routes.rb (Task 4). Run `rails routes | grep destroy_admin_user` to confirm it exists before testing the logout button manually.
+- **`sign_in @admin` in tests requires `include Devise::Test::IntegrationHelpers` in `test/test_helper.rb`.** Added successfully.
+- **The admin layout uses `destroy_admin_admin_user_session_path`.** Route confirmed via `rails routes`.
+- **Deviation: `authenticate_admin_admin_user!` (double-admin).** The plan specified `authenticate_admin_user!` which doesn't exist because `devise_for :admin_users` inside `namespace :admin` creates the Devise mapping `admin_admin_user`. All Devise helpers get the double-admin prefix: `authenticate_admin_admin_user!`, `current_admin_admin_user`, `admin_admin_user_signed_in?`.
+
+**Confidence: 97/100**
+- All 5 admin controller tests pass, full suite green at 43 runs.
+- The `price_cents == 2999` assertion in the PATCH test confirms the virtual setter pipeline works end-to-end.
+- Uncertain: Turbo confirmation dialog for Delete button (`data: { confirm: ... }`) — can't verify in tests, needs browser check.
 
 ---
 
