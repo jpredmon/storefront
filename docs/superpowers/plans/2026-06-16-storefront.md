@@ -545,8 +545,20 @@ storefront/
 - Create: `app/views/products/index.html.erb`
 - Create: `app/views/products/show.html.erb`
 - Create: `test/controllers/products_controller_test.rb`
+- Create: `app/models/cart.rb` (pulled from Task 7 — layout depends on `cart.count`)
+- Modify: `app/controllers/application_controller.rb` (pulled from Task 7 — `cart` helper_method)
 
-- [ ] **Step 1: Write the controller**
+> **Deviation from original plan:** The layout's `cart.count` call in the navbar crashes not just the server but also integration tests, since they render the full layout. Cart class and ApplicationController helper must be created here, not in Task 7. Task 7 now starts at the Cart tests (Steps 1–2 already done).
+
+- [ ] **Step 1: Write the Cart class (originally Task 7 Step 1)**
+
+  Create `app/models/cart.rb` — full implementation per Task 7. Required now because the application layout calls `cart.count` and integration tests render the layout.
+
+- [ ] **Step 2: Add cart helper to ApplicationController (originally Task 7 Step 2)**
+
+  Add `helper_method :cart` and the private `cart` method to `ApplicationController`.
+
+- [ ] **Step 3: Write the controller**
 
   Create `app/controllers/products_controller.rb`:
   ```ruby
@@ -561,7 +573,7 @@ storefront/
   end
   ```
 
-- [ ] **Step 2: Write the index view**
+- [ ] **Step 4: Write the index view**
 
   Create `app/views/products/index.html.erb`:
   ```erb
@@ -592,7 +604,7 @@ storefront/
   <% end %>
   ```
 
-- [ ] **Step 3: Write the show view**
+- [ ] **Step 5: Write the show view**
 
   Create `app/views/products/show.html.erb`:
   ```erb
@@ -624,9 +636,12 @@ storefront/
   </div>
   ```
 
-- [ ] **Step 4: Write the failing controller tests**
+- [ ] **Step 6: Write the failing controller tests**
 
   Create `test/controllers/products_controller_test.rb`:
+
+  > **Deviation from original plan:** The 404 test originally used `assert_raises(ActiveRecord::RecordNotFound)`. Rails 8's test environment default `config.action_dispatch.show_exceptions = :rescuable` catches `RecordNotFound` and returns a 404 response instead of raising. Changed to `assert_response :not_found`.
+
   ```ruby
   require "test_helper"
 
@@ -654,21 +669,22 @@ storefront/
     end
 
     test "GET show 404 for missing product" do
-      assert_raises(ActiveRecord::RecordNotFound) do
-        get product_path(id: 99999)
-      end
+      get product_path(id: 99999)
+      assert_response :not_found
     end
   end
   ```
 
-- [ ] **Step 5: Run the tests**
+- [ ] **Step 7: Run the tests**
 
   ```
   rails test test/controllers/products_controller_test.rb
   ```
-  Expected: `5 runs, 5 assertions, 0 failures, 0 errors`
+  Expected: `5 runs, 9 assertions, 0 failures, 0 errors`
 
-- [ ] **Step 6: Commit**
+  > **Note:** Assertion count is 9, not 5. `assert_select` and `assert_match` each count as separate assertions, and the 404 test now asserts a response code instead of catching an exception.
+
+- [ ] **Step 8: Commit**
 
   ```
   git add .
@@ -677,85 +693,21 @@ storefront/
 
 ### Adversarial Audit — Task 6
 
-- **The navbar calls `cart.count` on every page load.** If `cart` helper isn't defined on `ApplicationController` yet, every page will raise `NoMethodError`. Task 7 adds it — but if Task 6 is tested before Task 7 by booting the server, the products index will error. Run tests only; don't boot the server to verify UI until Task 7 is complete.
+- **RESOLVED: The navbar `cart.count` dependency.** Originally flagged as a Task 7 dependency. In practice, integration tests also render the layout, so `cart.count` crashes tests — not just the server. Cart class and ApplicationController helper were pulled into this task to fix it.
+- **RESOLVED: 404 test used `assert_raises(ActiveRecord::RecordNotFound)`.** Rails 8's `config.action_dispatch.show_exceptions = :rescuable` (test env default) catches `RecordNotFound` and returns a 404 response. The exception never propagates to the test. Fixed to `assert_response :not_found`.
 - **Assumption in the test:** `products(:tshirt)` expects the `tshirt` fixture to exist in `test/fixtures/products.yml`. If that file wasn't written in Task 5, every controller test will fail with a fixture load error — not an assertion error.
 - **Downstream risk:** `price_in_dollars` is called in both index and show views. If the helper wasn't written in Task 3, these views raise `NoMethodError` — but tests will catch this.
 
 ---
 
-## Task 7: Cart Class and ApplicationController Helper
+## Task 7: Cart Tests
+
+> **Deviation from original plan:** Steps 1–2 (Cart class and ApplicationController helper) were completed in Task 6 because the application layout's `cart.count` call is required for integration tests to pass. This task now only contains the Cart unit tests and commit.
 
 **Files:**
-- Create: `app/models/cart.rb`
-- Modify: `app/controllers/application_controller.rb`
 - Create: `test/models/cart_test.rb`
 
-- [ ] **Step 1: Write the Cart class**
-
-  Create `app/models/cart.rb`:
-  ```ruby
-  class Cart
-    def initialize(session)
-      @session = session
-      @session[:cart] ||= {}
-    end
-
-    def add_item(product_id, quantity = 1)
-      key = product_id.to_s
-      @session[:cart][key] ||= 0
-      @session[:cart][key] += quantity.to_i
-    end
-
-    def remove_item(product_id)
-      @session[:cart].delete(product_id.to_s)
-    end
-
-    def update_item(product_id, quantity)
-      quantity = quantity.to_i
-      quantity <= 0 ? remove_item(product_id) : @session[:cart][product_id.to_s] = quantity
-    end
-
-    def items
-      @session[:cart].filter_map do |product_id, quantity|
-        product = Product.find_by(id: product_id)
-        { product: product, quantity: quantity } if product
-      end
-    end
-
-    def total_cents
-      items.sum { |item| item[:product].price_cents * item[:quantity] }
-    end
-
-    def count
-      @session[:cart].values.sum
-    end
-
-    def empty?
-      @session[:cart].empty?
-    end
-
-    def clear
-      @session[:cart] = {}
-    end
-  end
-  ```
-
-- [ ] **Step 2: Add cart helper to ApplicationController**
-
-  Replace `app/controllers/application_controller.rb`:
-  ```ruby
-  class ApplicationController < ActionController::Base
-    helper_method :cart
-
-    private
-
-    def cart
-      @cart ||= Cart.new(session)
-    end
-  end
-  ```
-
-- [ ] **Step 3: Write the failing cart tests**
+- [ ] **Step 1: Write the failing cart tests**
 
   Create `test/models/cart_test.rb`:
   ```ruby
@@ -822,14 +774,14 @@ storefront/
   end
   ```
 
-- [ ] **Step 4: Run the tests**
+- [ ] **Step 2: Run the tests**
 
   ```
   rails test test/models/cart_test.rb
   ```
   Expected: `9 runs, 9 assertions, 0 failures, 0 errors`
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
   ```
   git add .
