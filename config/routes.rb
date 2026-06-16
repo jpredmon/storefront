@@ -11,7 +11,8 @@ Rails.application.routes.draw do
   namespace :admin do
     devise_for :admin_users,
       path: "",
-      path_names: { sign_in: "login", sign_out: "logout" }
+      path_names: { sign_in: "login", sign_out: "logout" },
+      controllers: { sessions: "devise/sessions" }
 
     resources :products
   end
