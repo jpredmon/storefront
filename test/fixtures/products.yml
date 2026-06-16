@@ -1,0 +1,11 @@
+tshirt:
+  name: Classic T-Shirt
+  description: A comfortable everyday tee.
+  price_cents: 2499
+  image_url: https://placehold.co/300x300
+
+poster:
+  name: Art Poster
+  description: High-quality print on glossy paper.
+  price_cents: 1499
+  image_url: https://placehold.co/300x300

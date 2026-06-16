@@ -1430,8 +1430,9 @@ storefront/
   ```yaml
   one:
     email: admin@storefront.test
-    encrypted_password: <%= BCrypt::Password.create("password123") %>
+    encrypted_password: $2a$12$8lQ.emZOsYvXUlNiOS/B0.SZ6kg6KmTLIjMQqEueL0aQ8TKD1xfz.
   ```
+  > **Note:** Use a static pre-computed hash, not `<%= BCrypt::Password.create(...) %>`. BCrypt is not loaded in the fixture ERB rendering context and will raise `NameError`.
 
 - [ ] **Step 6: Commit**
 
