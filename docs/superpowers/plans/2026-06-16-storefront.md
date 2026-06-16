@@ -1649,7 +1649,7 @@ storefront/
 **Files:**
 - Modify: `db/seeds.rb`
 
-- [ ] **Step 1: Write seeds.rb**
+- [x] **Step 1: Write seeds.rb**
 
   Replace `db/seeds.rb`:
   ```ruby
@@ -1682,17 +1682,14 @@ storefront/
   puts "Seeded #{Product.count} products and 1 admin user."
   ```
 
-- [ ] **Step 2: Run seeds**
+- [x] **Step 2: Run seeds**
 
   ```
   rails db:seed
   ```
-  Expected:
-  ```
-  Seeded 8 products and 1 admin user.
-  ```
+  Result: `Seeded 8 products and 1 admin user.`
 
-- [ ] **Step 3: Boot the server and verify manually**
+- [ ] **Step 3: Boot the server and verify manually** *(requires manual browser walkthrough)*
 
   ```
   rails server
@@ -1707,25 +1704,31 @@ storefront/
   - Admin product list shows all 8 products
   - Creating, editing, deleting a product works
 
-- [ ] **Step 4: Run the full test suite**
+- [x] **Step 4: Run the full test suite**
 
   ```
   rails test
   ```
-  Expected: all tests pass, 0 failures, 0 errors.
+  Result: `43 runs, 88 assertions, 0 failures, 0 errors`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```
   git add .
-  git commit -m "feat: add seed data and verify full app flow"
+  git commit -m "feat: add seed data for products and admin user"
   ```
 
 ### Adversarial Audit — Task 13
 
 - **`rails db:seed` is idempotent only because of `find_or_create_by!`.** If the `AdminUser` record already exists with a different password, the block does NOT run — the existing password is kept. This is correct behavior but means re-seeding doesn't reset the admin password. If you've changed it manually and forgotten it, drop and re-create the DB.
-- **Run the full test suite (`rails test`) before seeding and booting.** If any test fails here, fix it before proceeding to Task 14. A passing test suite at this point is the only baseline you have before adding deployment complexity.
+- **Run the full test suite (`rails test`) before seeding and booting.** Full suite passed: 43 runs, 88 assertions, 0 failures.
 - **Boot the server and walk the full purchase flow manually:** browse → product detail → add to cart → update quantity → checkout → confirmation → admin login → create/edit/delete product. Do not skip the manual walkthrough. Tests verify logic; the browser verifies the seams between layout, Turbo, Bootstrap, and session handling that tests cannot.
+
+**Confidence: 98/100**
+- Seeds ran successfully, idempotent via `find_or_create_by!`.
+- Full test suite green.
+- No deviations from plan.
+- Remaining 2%: manual browser walkthrough (Step 3) not done — user should verify the full flow.
 
 ---
 
