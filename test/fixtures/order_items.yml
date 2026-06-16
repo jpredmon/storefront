@@ -1,0 +1,2 @@
+# Intentionally empty — FK constraints prevent fixture loading without PG superuser.
+# Order items are created inline in tests instead.

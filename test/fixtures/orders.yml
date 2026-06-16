@@ -1,0 +1,5 @@
+pending_order:
+  customer_name: Jane Smith
+  customer_email: jane@example.com
+  total_cents: 3998
+  status: pending

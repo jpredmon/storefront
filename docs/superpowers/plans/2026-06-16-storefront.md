@@ -964,20 +964,21 @@ storefront/
 - Create: `test/fixtures/orders.yml`
 - Create: `test/fixtures/order_items.yml`
 
-- [ ] **Step 1: Generate migrations**
+- [x] **Step 1: Generate migrations**
 
   ```
   rails generate migration CreateOrders customer_name:string customer_email:string total_cents:integer status:string
   rails generate migration CreateOrderItems order:references product:references quantity:integer unit_price:integer
   ```
 
-- [ ] **Step 2: Run migrations**
+- [x] **Step 2: Run migrations**
 
   ```
   rails db:migrate
+  rails db:test:prepare
   ```
 
-- [ ] **Step 3: Write the Order model**
+- [x] **Step 3: Write the Order model**
 
   Create `app/models/order.rb`:
   ```ruby
@@ -994,7 +995,7 @@ storefront/
   end
   ```
 
-- [ ] **Step 4: Write the OrderItem model**
+- [x] **Step 4: Write the OrderItem model**
 
   Create `app/models/order_item.rb`:
   ```ruby
@@ -1011,7 +1012,9 @@ storefront/
   end
   ```
 
-- [ ] **Step 5: Write fixtures**
+- [x] **Step 5: Write fixtures**
+
+  > **Deviation from original plan:** The `order_items` fixture was left empty because the PG user lacks SUPERUSER privileges required by Rails 8.1.3 to disable referential integrity during fixture loading. Rails 8.1.3 tries to validate FK constraints after fixture insertion (even for empty fixtures), which fails with `PG::InsufficientPrivilege`. Fixed by adding `config.active_record.verify_foreign_keys_for_fixtures = false` to `config/environments/test.rb`. The `has_many` test creates order items inline instead.
 
   Create `test/fixtures/orders.yml`:
   ```yaml
@@ -1022,16 +1025,9 @@ storefront/
     status: pending
   ```
 
-  Create `test/fixtures/order_items.yml`:
-  ```yaml
-  one:
-    order: pending_order
-    product: tshirt
-    quantity: 2
-    unit_price: 1999
-  ```
+  Create `test/fixtures/order_items.yml` — intentionally empty (FK constraint workaround).
 
-- [ ] **Step 6: Write the failing Order model tests**
+- [x] **Step 6: Write the Order model tests**
 
   Create `test/models/order_test.rb`:
   ```ruby
@@ -1102,14 +1098,16 @@ storefront/
   end
   ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
   ```
   rails test test/models/order_test.rb test/models/order_item_test.rb
   ```
-  Expected: `9 runs, 9 assertions, 0 failures, 0 errors`
+  Result: `9 runs, 9 assertions, 0 failures, 0 errors`
 
-- [ ] **Step 8: Commit**
+  Full suite: `33 runs, 50 assertions, 0 failures, 0 errors`
+
+- [x] **Step 8: Commit**
 
   ```
   git add .
@@ -1121,6 +1119,12 @@ storefront/
 - **`URI::MailTo::EMAIL_REGEXP` in Rails 8:** This constant is still available and unchanged. But verify by running `rails runner "puts URI::MailTo::EMAIL_REGEXP"` — if it errors, the Order model's email validation will raise a NameError on every save.
 - **Two migrations, one `db:migrate`:** After generating both migrations, confirm `rails db:migrate` output shows BOTH `CreateOrders` and `CreateOrderItems` ran. If only one shows, the second file may have a timestamp collision.
 - **Downstream risk:** `unit_price` on `OrderItem` is set at order creation time from `product.price_cents`. If products are later deleted or repriced, historical orders still hold the correct price via `unit_price`. This is correct behavior — but if `unit_price` is accidentally populated from something other than `price_cents`, order totals will be wrong with no obvious error.
+- **Deviation: PG fixture FK validation.** Rails 8.1.3 validates FK constraints after fixture insertion even with empty fixture files. The `storefront` PG user lacked SUPERUSER, causing `PG::InsufficientPrivilege` errors on ALL tests (not just order tests). Fixed with `config.active_record.verify_foreign_keys_for_fixtures = false` in test.rb. The `order_items` fixture is empty; the `has_many` test creates data inline.
+
+**Confidence: 97/100**
+- All 9 model tests pass, full suite green at 33 runs.
+- Both migrations confirmed ran (output showed both CreateOrders and CreateOrderItems).
+- The FK fixture workaround is clean — `verify_foreign_keys_for_fixtures = false` is the Rails-recommended approach for non-superuser PG roles.
 
 ---
 

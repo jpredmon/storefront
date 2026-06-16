@@ -39,4 +39,7 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # Skip FK constraint validation during fixture loading (PG user lacks superuser).
+  config.active_record.verify_foreign_keys_for_fixtures = false
 end
