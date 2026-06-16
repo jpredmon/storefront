@@ -1,0 +1,30 @@
+<div class="text-center py-5">
+  <h1 class="display-5 text-success">&#10003; Order Confirmed!</h1>
+  <p class="lead">Thanks, <%= @order.customer_name %>. A confirmation will be sent to <strong><%= @order.customer_email %></strong>.</p>
+  <p class="text-muted">Order #<%= @order.id %></p>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header fw-bold">Your Items</div>
+      <div class="card-body">
+        <table class="table table-sm">
+          <% @order.order_items.each do |item| %>
+            <tr>
+              <td><%= item.product.name %> &times; <%= item.quantity %></td>
+              <td class="text-end"><%= price_in_dollars(item.subtotal_cents) %></td>
+            </tr>
+          <% end %>
+          <tr class="fw-bold">
+            <td>Total</td>
+            <td class="text-end"><%= price_in_dollars(@order.total_cents) %></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="text-center mt-4">
+      <%= link_to "Continue Shopping", products_path, class: "btn btn-primary" %>
+    </div>
+  </div>
+</div>
