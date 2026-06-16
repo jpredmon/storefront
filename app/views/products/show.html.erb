@@ -9,7 +9,7 @@
     <p class="text-muted"><%= @product.description %></p>
     <h3 class="text-success"><%= price_in_dollars(@product.price_cents) %></h3>
 
-    <%= form_with url: cart_items_path, method: :post, local: true do |f| %>
+    <%= form_with url: cart_items_path, method: :post, data: { turbo: false } do |f| %>
       <%= f.hidden_field :product_id, value: @product.id %>
       <div class="d-flex align-items-center gap-3 mt-3">
         <div style="width: 80px;">

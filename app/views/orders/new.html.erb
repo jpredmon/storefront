@@ -2,7 +2,7 @@
   <div class="col-md-7">
     <h1 class="mb-4">Checkout</h1>
 
-    <%= form_with model: @order, url: orders_path, local: true do |f| %>
+    <%= form_with model: @order, url: orders_path, data: { turbo: false } do |f| %>
       <% if @order.errors.any? %>
         <div class="alert alert-danger">
           <ul class="mb-0">
