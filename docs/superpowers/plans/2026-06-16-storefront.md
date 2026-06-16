@@ -799,23 +799,25 @@ storefront/
 ## Task 8: Cart Controller and Views
 
 **Files:**
-- Create: `app/controllers/cart_controller.rb`
+- Create: `app/controllers/carts_controller.rb`
 - Create: `app/controllers/cart_items_controller.rb`
-- Create: `app/views/cart/show.html.erb`
+- Create: `app/views/carts/show.html.erb`
 - Create: `test/controllers/cart_items_controller_test.rb`
 
-- [ ] **Step 1: Write CartController**
+- [x] **Step 1: Write CartsController**
 
-  Create `app/controllers/cart_controller.rb`:
+  > **Deviation from original plan:** Rails `resource :cart` (singular) maps to `CartsController` (plural), not `CartController`. The plan specified `CartController` which caused `ActionDispatch::MissingController: uninitialized constant CartsController` on redirect. Fixed by naming the controller `CartsController` and view directory `app/views/carts/`.
+
+  Create `app/controllers/carts_controller.rb`:
   ```ruby
-  class CartController < ApplicationController
+  class CartsController < ApplicationController
     def show
       @cart = cart
     end
   end
   ```
 
-- [ ] **Step 2: Write CartItemsController**
+- [x] **Step 2: Write CartItemsController**
 
   Create `app/controllers/cart_items_controller.rb`:
   ```ruby
@@ -837,9 +839,9 @@ storefront/
   end
   ```
 
-- [ ] **Step 3: Write the cart view**
+- [x] **Step 3: Write the cart view**
 
-  Create `app/views/cart/show.html.erb`:
+  Create `app/views/carts/show.html.erb`:
   ```erb
   <h1 class="mb-4">Your Cart</h1>
 
@@ -893,7 +895,7 @@ storefront/
   <% end %>
   ```
 
-- [ ] **Step 4: Write the failing controller tests**
+- [x] **Step 4: Write the controller tests**
 
   Create `test/controllers/cart_items_controller_test.rb`:
   ```ruby
@@ -921,14 +923,16 @@ storefront/
   end
   ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
   ```
   rails test test/controllers/cart_items_controller_test.rb
   ```
-  Expected: `3 runs, 3 assertions, 0 failures, 0 errors`
+  Result: `3 runs, 11 assertions, 0 failures, 0 errors` (11 assertions because `follow_redirect!` + `assert_match` add extra assertions beyond redirects)
 
-- [ ] **Step 6: Commit**
+  Full suite: `24 runs, 41 assertions, 0 failures, 0 errors`
+
+- [x] **Step 6: Commit**
 
   ```
   git add .
@@ -940,6 +944,12 @@ storefront/
 - **`button_to` with `method: :delete` in Rails 8 with Turbo:** Turbo intercepts this and issues a DELETE request via fetch. This works — but only if Turbo is loaded. Since we're using Bootstrap CDN (not the asset pipeline for JS), confirm `turbo-rails` is still serving its JS via importmap. If turbo is somehow not loading, DELETE buttons silently issue GET requests and routes won't match.
 - **`form_with ... method: :patch, local: true`** in the cart quantity update: `local: true` disables Turbo for this form. Confirm the update actually round-trips to the server (check server log for `PATCH /cart_items/:id`).
 - **Now is the first time the full public flow can be tested end-to-end.** Boot the server, add an item, view cart, update quantity, remove item. Do this before Task 9 — if something is broken here it's easier to isolate now than after 5 more tasks.
+- **Deviation: `resource :cart` maps to `CartsController` (plural).** The plan specified `CartController` (singular). Rails singular resource routing (`resource :cart`) still expects a pluralized controller name. This caused `ActionDispatch::MissingController` on the `follow_redirect!` in tests. Fixed by renaming to `CartsController` and `app/views/carts/`.
+
+**Confidence: 94/100**
+- Tests pass and cover the add/update/remove flow via integration tests.
+- Uncertain: Turbo JS loading for `button_to method: :delete` and `form_with method: :patch` in the browser — tests use form submission directly, not JS. Needs manual browser verification.
+- Uncertain: The `local: true` on `form_with` — in Rails 7+/8 this may be deprecated in favor of `data: { turbo: false }`. Functional but worth watching.
 
 ---
 

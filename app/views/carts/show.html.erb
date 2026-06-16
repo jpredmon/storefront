@@ -1,0 +1,50 @@
+<h1 class="mb-4">Your Cart</h1>
+
+<% if @cart.empty? %>
+  <p class="text-muted">Your cart is empty.</p>
+  <%= link_to "Browse Products", products_path, class: "btn btn-primary" %>
+<% else %>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th>Price</th>
+        <th>Quantity</th>
+        <th>Subtotal</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @cart.items.each do |item| %>
+        <tr>
+          <td><%= link_to item[:product].name, item[:product] %></td>
+          <td><%= price_in_dollars(item[:product].price_cents) %></td>
+          <td>
+            <%= form_with url: cart_item_path(item[:product].id), method: :patch, local: true do |f| %>
+              <div class="d-flex gap-1" style="width: 120px;">
+                <%= f.number_field :quantity, value: item[:quantity], min: 1, max: 99, class: "form-control form-control-sm" %>
+                <%= f.submit "Update", class: "btn btn-outline-secondary btn-sm" %>
+              </div>
+            <% end %>
+          </td>
+          <td><%= price_in_dollars(item[:product].price_cents * item[:quantity]) %></td>
+          <td>
+            <%= button_to "Remove", cart_item_path(item[:product].id), method: :delete, class: "btn btn-outline-danger btn-sm" %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3" class="text-end fw-bold">Total</td>
+        <td class="fw-bold"><%= price_in_dollars(@cart.total_cents) %></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="d-flex gap-2 mt-3">
+    <%= link_to "Continue Shopping", products_path, class: "btn btn-outline-secondary" %>
+    <%= link_to "Checkout →", new_order_path, class: "btn btn-success" %>
+  </div>
+<% end %>
