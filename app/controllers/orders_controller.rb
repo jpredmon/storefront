@@ -16,18 +16,20 @@ class OrdersController < ApplicationController
     @order.total_cents = @cart.total_cents
     @order.status      = "pending"
 
-    if @order.save
-      @cart.items.each do |item|
-        @order.order_items.create!(
-          product:    item[:product],
-          quantity:   item[:quantity],
-          unit_price: item[:product].price_cents
-        )
+    ActiveRecord::Base.transaction do
+      if @order.save
+        @cart.items.each do |item|
+          @order.order_items.create!(
+            product:    item[:product],
+            quantity:   item[:quantity],
+            unit_price: item[:product].price_cents
+          )
+        end
+        cart.clear
+        redirect_to @order, notice: "Order placed! Thanks for your purchase."
+      else
+        render :new, status: :unprocessable_entity
       end
-      cart.clear
-      redirect_to @order, notice: "Order placed! Thanks for your purchase."
-    else
-      render :new, status: :unprocessable_entity
     end
   end
 
