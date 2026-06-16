@@ -20,8 +20,9 @@ class Cart
   end
 
   def items
+    products = Product.where(id: @session[:cart].keys).index_by { |p| p.id.to_s }
     @session[:cart].filter_map do |product_id, quantity|
-      product = Product.find_by(id: product_id)
+      product = products[product_id.to_s]
       { product: product, quantity: quantity } if product
     end
   end
