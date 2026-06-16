@@ -1689,7 +1689,23 @@ storefront/
   ```
   Result: `Seeded 8 products and 1 admin user.`
 
-- [ ] **Step 3: Boot the server and verify manually** *(requires manual browser walkthrough)*
+- [x] **Step 3: Boot the server and verify manually**
+
+  > **Bug found during walkthrough:** `devise_for :admin_users` inside `namespace :admin` routes login to `admin/sessions#new`, expecting `Admin::SessionsController` which doesn't exist. Fixed by adding `controllers: { sessions: "devise/sessions" }` to the `devise_for` call in `config/routes.rb`. Committed separately as a fix.
+
+  Walkthrough results (all pass):
+  - Homepage: 8 products render alphabetically
+  - Product detail: renders with Add to Cart form
+  - Add to cart: POST redirects to /cart, item appears with correct price ($24.99)
+  - Update quantity: PATCH updates subtotal ($74.97 for 3x $24.99)
+  - Checkout: renders form with order summary
+  - Place order: creates order, redirects to confirmation with name/email/total
+  - Cart cleared after order, empty cart redirects from checkout
+  - Admin login: renders at /admin/login, accepts admin@storefront.dev / password123
+  - Admin products index: lists all 8 products
+  - Admin create: new product appears in list
+  - Admin edit: name/price update persists
+  - Admin delete: product removed from list
 
   ```
   rails server
