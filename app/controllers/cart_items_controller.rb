@@ -6,7 +6,7 @@ class CartItemsController < ApplicationController
 
   def update
     cart.update_item(params[:id], params[:quantity])
-    redirect_to cart_path
+    redirect_to cart_path, notice: "Quantity updated."
   end
 
   def destroy
