@@ -2,6 +2,10 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Rails version:** 8.1.3 (Propshaft, Solid Cache/Queue, Kamal included by default)
+
+> **Adversarial audit protocol:** Every task ends with an audit section. Before marking a task done and moving to the next: assign a confidence score (0–100), name what's uncertain, state what could fail downstream, and describe how to verify. "No errors in the log" is not verification. Challenge any step described as "should work" — it either does or it needs a check.
+
 **Goal:** Build a small, classic Rails MVC storefront with public product browsing, a session-based cart, order placement, and a Devise-protected admin panel for managing products.
 
 **Architecture:** Server-rendered Rails MVC — no Hotwire, no SPA, no JavaScript framework. Every request hits a controller, every response is a rendered ERB view. The cart is a plain Ruby class wrapping the session hash (no database table). Admin auth uses Devise with a separate AdminUser model.
@@ -92,17 +96,18 @@ storefront/
 
 - [ ] **Step 3: Install Rails**
 
+  Always pin the version. `gem install rails` without a constraint installs the latest release, which may not match this plan.
   ```
-  gem install rails
+  gem install rails -v "~> 8.1"
   ```
-  Expected: installs Rails and dependencies. Takes 1–3 minutes.
+  Expected: installs Rails 8.1.x and dependencies. Takes 1–3 minutes.
 
 - [ ] **Step 4: Verify Rails**
 
   ```
   rails --version
   ```
-  Expected: `Rails 7.2.x` (or similar 7.x)
+  Expected: `Rails 8.1.x`
 
 - [ ] **Step 5: Install PostgreSQL**
 
@@ -131,6 +136,12 @@ storefront/
   \q
   ```
 
+### Adversarial Audit — Task 1
+
+- **If Step 3 silently installed the wrong version:** `rails --version` catches it. Do not proceed if the version is not 8.1.x.
+- **Assumption that could be wrong:** PostgreSQL's `/bin` is on PATH. `psql --version` failing after install means PATH wasn't updated — add `C:\Program Files\PostgreSQL\16\bin` manually before continuing.
+- **Downstream risk:** A Rails version mismatch here means every generated file in Task 2 will be wrong. There is no recovery without regenerating the app.
+
 ---
 
 ## Task 2: Generate the Rails App
@@ -148,7 +159,14 @@ storefront/
   ```
   rails new StoreFront --database=postgresql --skip-action-mailer --skip-action-mailbox --skip-action-text --skip-active-storage --skip-action-cable
   ```
-  Expected: creates `StoreFront/` directory with Rails scaffold.
+  Expected: creates `StoreFront/` directory with Rails 8.1 scaffold.
+
+  Rails 8.1 adds several gems and files the plan does not use. These are **expected and harmless** — do not remove them:
+  - `solid_cache`, `solid_queue` — background job/cache adapters, only active if `SOLID_QUEUE_IN_PUMA` env var is set
+  - `kamal`, `thruster` — deployment tooling, unused until Task 14
+  - `turbo-rails`, `stimulus-rails` — Hotwire; installed but we opt out per-form with `local: true`
+  - `app/views/pwa/` — PWA stubs, ignore
+  - `config/deploy.yml` — Kamal config, ignore until Task 14
 
 - [ ] **Step 3: Move the existing docs folder into the new app**
 
@@ -190,6 +208,20 @@ storefront/
   git commit -m "chore: initial Rails scaffold"
   ```
 
+### Adversarial Audit — Task 2
+
+- **Verify skip flags were actually honored** — do not assume the command worked. Open `config/application.rb` and confirm these five lines are commented out:
+  ```ruby
+  # require "active_storage/engine"
+  # require "action_mailer/railtie"
+  # require "action_mailbox/engine"
+  # require "action_text/engine"
+  # require "action_cable/engine"
+  ```
+  If any are uncommented, the skip flag was ignored and those components are live — remove manually.
+- **If `rails db:create` silently fails:** The output will say `database already exists` or show an error. Check that both `storefront_development` and `storefront_test` are confirmed created, not assumed.
+- **Downstream risk:** An unchecked skip flag means ActiveStorage or ActionMailer loads in every request, adding middleware and potentially erroring when their migrations don't exist.
+
 ---
 
 ## Task 3: Gemfile, Bootstrap Layout, and Price Helper
@@ -202,20 +234,29 @@ storefront/
 
 - [ ] **Step 1: Add Devise to Gemfile**
 
-  Open `Gemfile` and add inside the main gem block (after the `gem "rails"` line):
+  Open `Gemfile` and add inside the main gem block (after the `gem "rails"` line), pinned to ensure Rails 8 compatibility:
   ```ruby
-  gem "devise"
+  gem "devise", ">= 4.9"
   ```
+  Devise 4.9.0 added Turbo support; earlier versions break with Rails 8's default form handling.
 
 - [ ] **Step 2: Install gems**
 
   ```
   bundle install
   ```
+  After it completes, verify Devise resolved to 4.9 or higher:
+  ```
+  grep "devise " Gemfile.lock
+  ```
+  Expected: `devise (4.9.x)` — if it shows anything below 4.9, add an explicit upper constraint and re-run.
 
 - [ ] **Step 3: Write the public layout**
 
   Replace `app/views/layouts/application.html.erb` entirely:
+
+  > **Rails 8 / Propshaft note:** Use `stylesheet_link_tag :app` (symbol, no `media:` option) — not `"application"`. Propshaft resolves `:app` to `app.css`; the Sprockets-era `"application"` argument produces a broken asset path. The `media: "all"` option is also a Sprockets-only convention — drop it.
+
   ```erb
   <!DOCTYPE html>
   <html>
@@ -224,7 +265,7 @@ storefront/
       <meta name="viewport" content="width=device-width,initial-scale=1">
       <%= csrf_meta_tags %>
       <%= csp_meta_tag %>
-      <%= stylesheet_link_tag "application", media: "all" %>
+      <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
       <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     </head>
     <body>
@@ -271,7 +312,7 @@ storefront/
       <meta name="viewport" content="width=device-width,initial-scale=1">
       <%= csrf_meta_tags %>
       <%= csp_meta_tag %>
-      <%= stylesheet_link_tag "application", media: "all" %>
+      <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
       <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     </head>
     <body class="bg-light">
@@ -280,7 +321,7 @@ storefront/
           <span class="navbar-brand fw-bold">StoreFront Admin</span>
           <div class="ms-auto">
             <%= link_to "View Store", root_path, class: "btn btn-outline-light btn-sm me-2" %>
-            <%= link_to "Log Out", destroy_admin_user_session_path, data: { "turbo-method": :delete }, class: "btn btn-outline-danger btn-sm" %>
+            <%= link_to "Log Out", destroy_admin_user_session_path, data: { turbo_method: :delete }, class: "btn btn-outline-danger btn-sm" %>
           </div>
         </div>
       </nav>
@@ -320,6 +361,13 @@ storefront/
   git commit -m "feat: add devise gem, bootstrap layouts, price helper"
   ```
 
+### Adversarial Audit — Task 3
+
+- **Boot the server and look at the page — do not skip this.** `rails server`, open `http://localhost:3000`. If Bootstrap loaded correctly you will see a dark navbar. An unstyled white page with no navbar means `stylesheet_link_tag` or the CDN `<link>` tag is wrong. Check browser DevTools Network tab for 404s.
+- **"No errors in the server log" is not sufficient.** A wrong `stylesheet_link_tag` argument produces a browser-side 404, not a server error.
+- **Devise version check:** run `grep "devise " Gemfile.lock`. If version is below 4.9, the logout link will not work correctly with Turbo.
+- **Downstream risk from this task:** Every view in the app inherits from these two layouts. A broken layout silently corrupts every page rendered — the bug won't surface as an error, just as missing styles or a broken navbar.
+
 ---
 
 ## Task 4: Routes
@@ -357,6 +405,12 @@ storefront/
   git add config/routes.rb
   git commit -m "feat: add routes"
   ```
+
+### Adversarial Audit — Task 4
+
+- **Verify routes are loadable:** `rails routes | grep products` — if this errors, there's a syntax problem in routes.rb that will crash every request.
+- **Assumption:** `devise_for :admin_users` inside `namespace :admin` generates the paths `new_admin_user_session_path` and `destroy_admin_user_session_path`. Confirm with `rails routes | grep admin_user_session` before Task 11 relies on them.
+- **Downstream risk:** A wrong namespace or path name here propagates silently to every link, form, and `before_action` that references these helpers — failures won't appear until Task 11 or 12.
 
 ---
 
@@ -475,6 +529,12 @@ storefront/
   git add .
   git commit -m "feat: add Product model with validations and price virtual attribute"
   ```
+
+### Adversarial Audit — Task 5
+
+- **`rails db:migrate` in Rails 8 runs more than your migration.** It also runs Solid Cache and Solid Queue migrations from `db/cache_migrate/` and `db/queue_migrate/`. This is expected — confirm the output includes your `CreateProducts` migration AND the solid_* tables without errors. A partial failure here leaves the schema in an inconsistent state.
+- **If tests produce `0 runs`:** The test file wasn't found. Confirm the file path is exactly `test/models/product_test.rb`.
+- **Downstream risk:** `price_cents` integer column is the source of truth for pricing everywhere — Cart totals, OrderItem unit_price, the admin form virtual `price=` setter all depend on it being an integer in cents. If this migration runs with the wrong type (e.g. decimal), every price calculation silently produces wrong results.
 
 ---
 
@@ -614,6 +674,12 @@ storefront/
   git add .
   git commit -m "feat: add ProductsController and public product views"
   ```
+
+### Adversarial Audit — Task 6
+
+- **The navbar calls `cart.count` on every page load.** If `cart` helper isn't defined on `ApplicationController` yet, every page will raise `NoMethodError`. Task 7 adds it — but if Task 6 is tested before Task 7 by booting the server, the products index will error. Run tests only; don't boot the server to verify UI until Task 7 is complete.
+- **Assumption in the test:** `products(:tshirt)` expects the `tshirt` fixture to exist in `test/fixtures/products.yml`. If that file wasn't written in Task 5, every controller test will fail with a fixture load error — not an assertion error.
+- **Downstream risk:** `price_in_dollars` is called in both index and show views. If the helper wasn't written in Task 3, these views raise `NoMethodError` — but tests will catch this.
 
 ---
 
@@ -770,6 +836,12 @@ storefront/
   git commit -m "feat: add Cart class and ApplicationController cart helper"
   ```
 
+### Adversarial Audit — Task 7
+
+- **Cart uses the session hash directly.** If the session store changes between environments, `@session[:cart]` could be nil on first access. The `||= {}` guard in `initialize` covers this — but confirm the test's `@session = {}` accurately reflects how Rails initializes a blank session in integration tests.
+- **`Product.find_by(id: product_id)` in `Cart#items` does a DB query per item.** With the test fixtures this is fine, but note that in production with many cart items this is an N+1. Not a blocker, but a known limitation baked in at this task.
+- **Downstream risk:** `cart` is a `helper_method` on `ApplicationController`. Every controller and view in the app can call it. If `Cart.new` raises on a malformed session (e.g. `session[:cart]` is a String instead of a Hash from a corrupted cookie), every page crashes. The `||= {}` guard protects against nil but not against wrong types.
+
 ---
 
 ## Task 8: Cart Controller and Views
@@ -910,6 +982,12 @@ storefront/
   git add .
   git commit -m "feat: add cart controller, cart items controller, and cart view"
   ```
+
+### Adversarial Audit — Task 8
+
+- **`button_to` with `method: :delete` in Rails 8 with Turbo:** Turbo intercepts this and issues a DELETE request via fetch. This works — but only if Turbo is loaded. Since we're using Bootstrap CDN (not the asset pipeline for JS), confirm `turbo-rails` is still serving its JS via importmap. If turbo is somehow not loading, DELETE buttons silently issue GET requests and routes won't match.
+- **`form_with ... method: :patch, local: true`** in the cart quantity update: `local: true` disables Turbo for this form. Confirm the update actually round-trips to the server (check server log for `PATCH /cart_items/:id`).
+- **Now is the first time the full public flow can be tested end-to-end.** Boot the server, add an item, view cart, update quantity, remove item. Do this before Task 9 — if something is broken here it's easier to isolate now than after 5 more tasks.
 
 ---
 
@@ -1075,6 +1153,12 @@ storefront/
   git add .
   git commit -m "feat: add Order and OrderItem models with validations"
   ```
+
+### Adversarial Audit — Task 9
+
+- **`URI::MailTo::EMAIL_REGEXP` in Rails 8:** This constant is still available and unchanged. But verify by running `rails runner "puts URI::MailTo::EMAIL_REGEXP"` — if it errors, the Order model's email validation will raise a NameError on every save.
+- **Two migrations, one `db:migrate`:** After generating both migrations, confirm `rails db:migrate` output shows BOTH `CreateOrders` and `CreateOrderItems` ran. If only one shows, the second file may have a timestamp collision.
+- **Downstream risk:** `unit_price` on `OrderItem` is set at order creation time from `product.price_cents`. If products are later deleted or repriced, historical orders still hold the correct price via `unit_price`. This is correct behavior — but if `unit_price` is accidentally populated from something other than `price_cents`, order totals will be wrong with no obvious error.
 
 ---
 
@@ -1291,6 +1375,12 @@ storefront/
   git commit -m "feat: add OrdersController and checkout views"
   ```
 
+### Adversarial Audit — Task 10
+
+- **`redirect_to(@order) and return`-style pattern in `create`:** The `and return` after `redirect_to` is required — without it, Rails continues executing and double-renders. Verify the pattern is exactly `redirect_to(...) and return`, not just `redirect_to(...)` on its own line.
+- **Cart is cleared after order is saved, not before.** If `order_items.create!` raises (e.g. a validation failure on an individual item), the order record exists but no items were created, and the cart was NOT cleared. This is correct behavior — but test the unhappy path manually to confirm the cart survives a failed order.
+- **`raise_on_open_redirects` (Rails 8.1 default):** All redirects in this controller go to named routes (`cart_path`, `order_path`) — no external URLs. This default will not fire. Confirmed safe.
+
 ---
 
 ## Task 11: Devise AdminUser
@@ -1349,6 +1439,13 @@ storefront/
   git add .
   git commit -m "feat: install Devise and generate AdminUser"
   ```
+
+### Adversarial Audit — Task 11
+
+- **Verify Devise version in Gemfile.lock is >= 4.9:** `grep "devise " Gemfile.lock`. If it's below 4.9, the logout link using `data: { turbo_method: :delete }` will not work correctly — Devise's Turbo support was added in 4.9.0.
+- **`rails generate devise:install` outputs instructions you must not skip:** Specifically, it tells you to add `config.action_mailer.default_url_options` to `development.rb`. Add it even though we have no mailer — Devise's own confirmable/recoverable modules reference it and will warn without it. We've disabled those modules, but the warning still appears and can obscure real errors in the log.
+- **The `admin_users.yml` fixture uses `BCrypt::Password.create`:** This is evaluated at test setup time, not at fixture load time. If `bcrypt` is not in the bundle (it's a Devise dependency, so it should be), every test that touches admin fixtures will fail with `NameError: uninitialized constant BCrypt`. Confirm `bundle list | grep bcrypt` shows it present after Task 3's `bundle install`.
+- **Downstream risk:** If `authenticate_admin_user!` is not correctly wired in Task 12's BaseController, every admin route is publicly accessible with no error. The test that checks for redirect-to-login is the only gate — run it and read the output, don't just count assertions.
 
 ---
 
@@ -1530,7 +1627,7 @@ storefront/
 
     test "GET index redirects to login when not authenticated" do
       get admin_products_path
-      assert_redirected_to new_admin_user_session_path
+      assert_redirected_to new_admin_admin_user_session_path
     end
 
     test "GET index returns 200 when authenticated" do
@@ -1589,6 +1686,12 @@ storefront/
   git add .
   git commit -m "feat: add admin base controller, admin products CRUD, and admin views"
   ```
+
+### Adversarial Audit — Task 12
+
+- **`price` (not `price_cents`) is the permitted param in `product_params`.** This relies on the `price=` virtual setter on `Product` to convert dollars to cents. If someone accidentally changes this to `price_cents`, the admin form will bypass the conversion and store raw float values (e.g. `29.99` instead of `2999`). The PATCH test specifically asserts `price_cents == 2999` — this is the guard.
+- **`sign_in @admin` in tests requires `include Devise::Test::IntegrationHelpers` in `test/test_helper.rb`.** If this line is missing, every test that calls `sign_in` fails with `NoMethodError` — not a Devise error, just an undefined method. Easy to miss; add it before running any admin test.
+- **The admin layout uses `destroy_admin_user_session_path`.** This route only exists after `devise_for :admin_users` is declared inside the `namespace :admin` block in routes.rb (Task 4). Run `rails routes | grep destroy_admin_user` to confirm it exists before testing the logout button manually.
 
 ---
 
@@ -1669,9 +1772,84 @@ storefront/
   git commit -m "feat: add seed data and verify full app flow"
   ```
 
+### Adversarial Audit — Task 13
+
+- **`rails db:seed` is idempotent only because of `find_or_create_by!`.** If the `AdminUser` record already exists with a different password, the block does NOT run — the existing password is kept. This is correct behavior but means re-seeding doesn't reset the admin password. If you've changed it manually and forgotten it, drop and re-create the DB.
+- **Run the full test suite (`rails test`) before seeding and booting.** If any test fails here, fix it before proceeding to Task 14. A passing test suite at this point is the only baseline you have before adding deployment complexity.
+- **Boot the server and walk the full purchase flow manually:** browse → product detail → add to cart → update quantity → checkout → confirmation → admin login → create/edit/delete product. Do not skip the manual walkthrough. Tests verify logic; the browser verifies the seams between layout, Turbo, Bootstrap, and session handling that tests cannot.
+
 ---
 
-## Task 14: Deploy to Render
+## Task 14: Deploy
+
+**Two options.** Rails 8 ships with Kamal pre-configured; Render is simpler if you don't have a VPS. Choose one.
+
+---
+
+### Option A: Deploy with Kamal (Rails 8 Native)
+
+**Files:**
+- Modify: `config/deploy.yml`
+
+Kamal is already in your Gemfile and `config/deploy.yml` was generated by the scaffold. This is the Rails 8-native deployment path — no third-party platform required, deploys to any VPS (DigitalOcean, Hetzner, etc.).
+
+- [ ] **Step 1: Provision a VPS**
+
+  Get a Ubuntu 22.04+ server with at least 1GB RAM. Add your SSH public key during provisioning. Note the IP address.
+
+- [ ] **Step 2: Edit `config/deploy.yml`**
+
+  Fill in the generated file:
+  ```yaml
+  service: storefront
+  image: YOUR_DOCKERHUB_USERNAME/storefront
+
+  servers:
+    web:
+      - YOUR_SERVER_IP
+
+  proxy:
+    ssl: true
+    host: storefront.yourdomain.com
+
+  registry:
+    username: YOUR_DOCKERHUB_USERNAME
+    password:
+      - KAMAL_REGISTRY_PASSWORD
+
+  env:
+    secret:
+      - RAILS_MASTER_KEY
+      - DATABASE_URL
+      - ADMIN_EMAIL
+      - ADMIN_PASSWORD
+  ```
+
+- [ ] **Step 3: Set secrets**
+
+  ```
+  bin/kamal secrets set RAILS_MASTER_KEY=$(cat config/master.key)
+  bin/kamal secrets set DATABASE_URL=postgres://storefront:storefront@db/storefront_production
+  bin/kamal secrets set ADMIN_EMAIL=admin@yourdomain.com
+  bin/kamal secrets set ADMIN_PASSWORD=<strong-password>
+  ```
+
+- [ ] **Step 4: Deploy**
+
+  ```
+  bin/kamal setup
+  bin/kamal deploy
+  ```
+
+- [ ] **Step 5: Seed**
+
+  ```
+  bin/kamal app exec 'bin/rails db:seed'
+  ```
+
+---
+
+### Option B: Deploy to Render (Simpler, No Server Management)
 
 **Files:**
 - Create: `Procfile`
@@ -1749,6 +1927,13 @@ storefront/
   git push
   ```
 
+### Adversarial Audit — Task 14
+
+- **`rails assets:precompile` with Propshaft** works differently from Sprockets — it copies assets to `public/assets/` without fingerprinting digests by default. Render's build command calls it; confirm the build log shows it completing without error.
+- **`RAILS_MASTER_KEY`** must match `config/master.key` exactly, including no trailing newline. Copy-pasting from a terminal often adds one. If the deployed app crashes with `ActiveSupport::MessageEncryptor::InvalidMessage`, this is the cause.
+- **Solid Queue in production:** The `config/puma.rb` includes `plugin :solid_queue if ENV["SOLID_QUEUE_IN_PUMA"]`. Do not set this env var in production unless you've run the Solid Queue migrations on the production DB. Leave it unset — the app runs fine without it.
+- **Git branch:** The local branch is `master`; step 2 renames it to `main` with `git branch -M main`. Confirm with `git branch` after pushing — if GitHub shows `master` as the default branch, the Render deploy hook may not trigger on push.
+
 ---
 
 ## Self-Review
@@ -1763,9 +1948,16 @@ storefront/
 - ✅ Bootstrap layout (public + admin)
 - ✅ price_in_dollars helper
 - ✅ Seed data (admin + 8 products)
-- ✅ Deploy to Render + Cloudflare
+- ✅ Deploy to Render or Kamal
 
-**Placeholder scan:** No TBDs, all steps include complete code.
+**Rails 8.1.3 compatibility checklist:**
+- ✅ `stylesheet_link_tag :app` (Propshaft) in both layouts
+- ✅ `gem "devise", ">= 4.9"` pinned for Turbo compatibility
+- ✅ `data: { turbo_method: :delete }` on admin logout link
+- ✅ `form_with ... local: true` on all forms (opts out of Turbo per-form)
+- ✅ Solid Queue gated behind `SOLID_QUEUE_IN_PUMA` env var — not auto-started
+- ✅ CSP initializer fully commented out — Bootstrap CDN unblocked
+- ✅ `config.load_defaults 8.1` — `raise_on_open_redirects` safe (all redirects use named routes)
 
 **Type consistency:**
 - `price_cents` integer column throughout — Product, Order, OrderItem
