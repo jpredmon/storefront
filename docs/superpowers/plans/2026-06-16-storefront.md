@@ -1,0 +1,1776 @@
+# StoreFront Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build a small, classic Rails MVC storefront with public product browsing, a session-based cart, order placement, and a Devise-protected admin panel for managing products.
+
+**Architecture:** Server-rendered Rails MVC — no Hotwire, no SPA, no JavaScript framework. Every request hits a controller, every response is a rendered ERB view. The cart is a plain Ruby class wrapping the session hash (no database table). Admin auth uses Devise with a separate AdminUser model.
+
+**Tech Stack:** Ruby 3.3, Rails 7.2, PostgreSQL, Devise, Bootstrap 5 (CDN), Minitest
+
+---
+
+## File Map
+
+```
+storefront/
+  app/
+    controllers/
+      application_controller.rb       # cart helper method
+      products_controller.rb          # index, show
+      cart_controller.rb              # show
+      cart_items_controller.rb        # create, update, destroy
+      orders_controller.rb            # new, create, show
+      admin/
+        base_controller.rb            # authenticate_admin_user! before_action
+        products_controller.rb        # full CRUD
+    models/
+      product.rb                      # validations, price virtual attribute
+      cart.rb                         # plain Ruby, wraps session[:cart]
+      order.rb                        # validations, has_many order_items
+      order_item.rb                   # belongs_to order + product
+      admin_user.rb                   # Devise model
+    views/
+      layouts/
+        application.html.erb          # Bootstrap navbar, flash messages
+        admin.html.erb                # plain admin header + logout
+      products/
+        index.html.erb                # card grid
+        show.html.erb                 # detail + add to cart form
+      cart/
+        show.html.erb                 # line items table + checkout button
+      orders/
+        new.html.erb                  # checkout form
+        show.html.erb                 # confirmation page
+      admin/
+        products/
+          index.html.erb              # product table with edit/delete
+          new.html.erb
+          edit.html.erb
+          _form.html.erb              # shared form partial
+    helpers/
+      application_helper.rb          # price_in_dollars(cents)
+  config/
+    routes.rb
+  db/
+    seeds.rb
+  test/
+    models/
+      product_test.rb
+      cart_test.rb
+      order_test.rb
+      order_item_test.rb
+    controllers/
+      products_controller_test.rb
+      cart_items_controller_test.rb
+      orders_controller_test.rb
+      admin/
+        products_controller_test.rb
+    fixtures/
+      products.yml
+      admin_users.yml
+```
+
+---
+
+## Task 1: Install Ruby, Rails, and PostgreSQL
+
+**Files:** none (environment setup)
+
+- [ ] **Step 1: Install RubyInstaller with DevKit**
+
+  Download from https://rubyinstaller.org/downloads/ — choose **Ruby+Devkit 3.3.x (x64)**.
+  Run the installer. On the final screen, keep "Run 'ridk install'" checked. When the terminal opens, type `1` and press Enter to install MSYS2 base. Wait for it to finish.
+
+- [ ] **Step 2: Verify Ruby**
+
+  Open a new PowerShell window (important — old windows won't have the PATH update):
+  ```
+  ruby --version
+  ```
+  Expected: `ruby 3.3.x`
+
+- [ ] **Step 3: Install Rails**
+
+  ```
+  gem install rails
+  ```
+  Expected: installs Rails and dependencies. Takes 1–3 minutes.
+
+- [ ] **Step 4: Verify Rails**
+
+  ```
+  rails --version
+  ```
+  Expected: `Rails 7.2.x` (or similar 7.x)
+
+- [ ] **Step 5: Install PostgreSQL**
+
+  Download from https://www.postgresql.org/download/windows/ — use the EDB interactive installer for PostgreSQL 16.
+  Install with default settings. Set a password for the `postgres` superuser — save it, you'll need it.
+  Keep the default port (5432).
+
+- [ ] **Step 6: Verify PostgreSQL**
+
+  ```
+  psql --version
+  ```
+  Expected: `psql (PostgreSQL) 16.x`
+
+  If `psql` is not found, add PostgreSQL bin to PATH:
+  `C:\Program Files\PostgreSQL\16\bin`
+
+- [ ] **Step 7: Create a database user for Rails**
+
+  ```
+  psql -U postgres
+  ```
+  Enter the postgres superuser password, then run:
+  ```sql
+  CREATE USER storefront WITH PASSWORD 'storefront' CREATEDB;
+  \q
+  ```
+
+---
+
+## Task 2: Generate the Rails App
+
+**Files:** entire project scaffold
+
+- [ ] **Step 1: Navigate to project directory**
+
+  ```
+  cd C:\dev\claude-practice
+  ```
+
+- [ ] **Step 2: Generate the app**
+
+  ```
+  rails new StoreFront --database=postgresql --skip-action-mailer --skip-action-mailbox --skip-action-text --skip-active-storage --skip-action-cable
+  ```
+  Expected: creates `StoreFront/` directory with Rails scaffold.
+
+- [ ] **Step 3: Move the existing docs folder into the new app**
+
+  ```
+  Move-Item C:\dev\claude-practice\StoreFront\docs C:\dev\claude-practice\StoreFront-docs-temp
+  cd StoreFront
+  Move-Item C:\dev\claude-practice\StoreFront-docs-temp C:\dev\claude-practice\StoreFront\docs
+  ```
+
+- [ ] **Step 4: Configure database credentials**
+
+  Edit `config/database.yml`. Replace the `default: &default` block:
+  ```yaml
+  default: &default
+    adapter: postgresql
+    encoding: unicode
+    pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+    username: storefront
+    password: storefront
+    host: localhost
+  ```
+
+- [ ] **Step 5: Create databases**
+
+  ```
+  rails db:create
+  ```
+  Expected:
+  ```
+  Created database 'storefront_development'
+  Created database 'storefront_test'
+  ```
+
+- [ ] **Step 6: Initialise git**
+
+  ```
+  git init
+  git add .
+  git commit -m "chore: initial Rails scaffold"
+  ```
+
+---
+
+## Task 3: Gemfile, Bootstrap Layout, and Price Helper
+
+**Files:**
+- Modify: `Gemfile`
+- Modify: `app/views/layouts/application.html.erb`
+- Create: `app/views/layouts/admin.html.erb`
+- Modify: `app/helpers/application_helper.rb`
+
+- [ ] **Step 1: Add Devise to Gemfile**
+
+  Open `Gemfile` and add inside the main gem block (after the `gem "rails"` line):
+  ```ruby
+  gem "devise"
+  ```
+
+- [ ] **Step 2: Install gems**
+
+  ```
+  bundle install
+  ```
+
+- [ ] **Step 3: Write the public layout**
+
+  Replace `app/views/layouts/application.html.erb` entirely:
+  ```erb
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>StoreFront</title>
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <%= csrf_meta_tags %>
+      <%= csp_meta_tag %>
+      <%= stylesheet_link_tag "application", media: "all" %>
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    </head>
+    <body>
+      <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+          <%= link_to "StoreFront", root_path, class: "navbar-brand fw-bold" %>
+          <div class="ms-auto">
+            <%= link_to cart_path, class: "btn btn-outline-light btn-sm" do %>
+              🛒 Cart (<%= cart.count %>)
+            <% end %>
+          </div>
+        </div>
+      </nav>
+
+      <div class="container mt-4">
+        <% flash.each do |type, message| %>
+          <% css = type.to_s == "notice" ? "alert-success" : "alert-danger" %>
+          <div class="alert <%= css %> alert-dismissible fade show" role="alert">
+            <%= message %>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+        <% end %>
+
+        <%= yield %>
+      </div>
+
+      <footer class="text-center text-muted py-4 mt-5 border-top">
+        <small>&copy; <%= Date.current.year %> StoreFront</small>
+      </footer>
+
+      <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    </body>
+  </html>
+  ```
+
+- [ ] **Step 4: Write the admin layout**
+
+  Create `app/views/layouts/admin.html.erb`:
+  ```erb
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>StoreFront Admin</title>
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <%= csrf_meta_tags %>
+      <%= csp_meta_tag %>
+      <%= stylesheet_link_tag "application", media: "all" %>
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-light">
+      <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+          <span class="navbar-brand fw-bold">StoreFront Admin</span>
+          <div class="ms-auto">
+            <%= link_to "View Store", root_path, class: "btn btn-outline-light btn-sm me-2" %>
+            <%= link_to "Log Out", destroy_admin_user_session_path, data: { "turbo-method": :delete }, class: "btn btn-outline-danger btn-sm" %>
+          </div>
+        </div>
+      </nav>
+
+      <div class="container mt-4">
+        <% flash.each do |type, message| %>
+          <% css = type.to_s == "notice" ? "alert-success" : "alert-danger" %>
+          <div class="alert <%= css %> alert-dismissible fade show" role="alert">
+            <%= message %>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+        <% end %>
+
+        <%= yield %>
+      </div>
+
+      <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    </body>
+  </html>
+  ```
+
+- [ ] **Step 5: Write the price helper**
+
+  Replace `app/helpers/application_helper.rb`:
+  ```ruby
+  module ApplicationHelper
+    def price_in_dollars(cents)
+      "$#{'%.2f' % (cents / 100.0)}"
+    end
+  end
+  ```
+
+- [ ] **Step 6: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: add devise gem, bootstrap layouts, price helper"
+  ```
+
+---
+
+## Task 4: Routes
+
+**Files:**
+- Modify: `config/routes.rb`
+
+- [ ] **Step 1: Write routes**
+
+  Replace `config/routes.rb`:
+  ```ruby
+  Rails.application.routes.draw do
+    root "products#index"
+
+    resources :products, only: [:index, :show]
+
+    resource  :cart,       only: [:show]
+    resources :cart_items, only: [:create, :update, :destroy]
+
+    resources :orders, only: [:new, :create, :show]
+
+    namespace :admin do
+      devise_for :admin_users,
+        path: "",
+        path_names: { sign_in: "login", sign_out: "logout" }
+
+      resources :products
+    end
+  end
+  ```
+
+- [ ] **Step 2: Commit**
+
+  ```
+  git add config/routes.rb
+  git commit -m "feat: add routes"
+  ```
+
+---
+
+## Task 5: Product Model
+
+**Files:**
+- Create: `db/migrate/TIMESTAMP_create_products.rb` (via generator)
+- Create: `app/models/product.rb`
+- Create: `test/models/product_test.rb`
+- Create: `test/fixtures/products.yml`
+
+- [ ] **Step 1: Generate the migration**
+
+  ```
+  rails generate migration CreateProducts name:string description:text price_cents:integer image_url:string
+  ```
+
+- [ ] **Step 2: Write the model**
+
+  Replace `app/models/product.rb`:
+  ```ruby
+  class Product < ApplicationRecord
+    validates :name, presence: true
+    validates :price_cents, presence: true,
+              numericality: { only_integer: true, greater_than: 0 }
+
+    def price
+      price_cents.to_f / 100
+    end
+
+    def price=(dollars)
+      self.price_cents = (dollars.to_f * 100).to_i
+    end
+  end
+  ```
+
+- [ ] **Step 3: Run the migration**
+
+  ```
+  rails db:migrate
+  ```
+
+- [ ] **Step 4: Write the fixture**
+
+  Replace `test/fixtures/products.yml`:
+  ```yaml
+  tshirt:
+    name: Classic T-Shirt
+    description: A comfortable everyday tee.
+    price_cents: 2499
+    image_url: https://placehold.co/300x300
+
+  poster:
+    name: Art Poster
+    description: High-quality print on glossy paper.
+    price_cents: 1499
+    image_url: https://placehold.co/300x300
+  ```
+
+- [ ] **Step 5: Write the failing tests**
+
+  Create `test/models/product_test.rb`:
+  ```ruby
+  require "test_helper"
+
+  class ProductTest < ActiveSupport::TestCase
+    test "valid with all attributes" do
+      product = Product.new(name: "Widget", price_cents: 999)
+      assert product.valid?
+    end
+
+    test "invalid without name" do
+      product = Product.new(price_cents: 999)
+      assert_not product.valid?
+      assert_includes product.errors[:name], "can't be blank"
+    end
+
+    test "invalid without price_cents" do
+      product = Product.new(name: "Widget")
+      assert_not product.valid?
+    end
+
+    test "invalid with price_cents of zero" do
+      product = Product.new(name: "Widget", price_cents: 0)
+      assert_not product.valid?
+    end
+
+    test "invalid with negative price_cents" do
+      product = Product.new(name: "Widget", price_cents: -1)
+      assert_not product.valid?
+    end
+
+    test "price virtual attribute converts dollars to cents" do
+      product = Product.new(name: "Widget")
+      product.price = 9.99
+      assert_equal 999, product.price_cents
+    end
+
+    test "price reader returns dollars" do
+      product = Product.new(name: "Widget", price_cents: 2499)
+      assert_in_delta 24.99, product.price, 0.001
+    end
+  end
+  ```
+
+- [ ] **Step 6: Run tests — expect them to pass**
+
+  ```
+  rails test test/models/product_test.rb
+  ```
+  Expected: `7 runs, 7 assertions, 0 failures, 0 errors`
+
+- [ ] **Step 7: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: add Product model with validations and price virtual attribute"
+  ```
+
+---
+
+## Task 6: Products Controller and Public Views
+
+**Files:**
+- Create: `app/controllers/products_controller.rb`
+- Create: `app/views/products/index.html.erb`
+- Create: `app/views/products/show.html.erb`
+- Create: `test/controllers/products_controller_test.rb`
+
+- [ ] **Step 1: Write the controller**
+
+  Create `app/controllers/products_controller.rb`:
+  ```ruby
+  class ProductsController < ApplicationController
+    def index
+      @products = Product.order(:name)
+    end
+
+    def show
+      @product = Product.find(params[:id])
+    end
+  end
+  ```
+
+- [ ] **Step 2: Write the index view**
+
+  Create `app/views/products/index.html.erb`:
+  ```erb
+  <h1 class="mb-4">Products</h1>
+
+  <div class="row row-cols-1 row-cols-md-3 g-4">
+    <% @products.each do |product| %>
+      <div class="col">
+        <div class="card h-100">
+          <% if product.image_url.present? %>
+            <img src="<%= product.image_url %>" class="card-img-top" alt="<%= product.name %>" style="height: 200px; object-fit: cover;">
+          <% end %>
+          <div class="card-body d-flex flex-column">
+            <h5 class="card-title"><%= product.name %></h5>
+            <p class="card-text text-muted"><%= truncate(product.description, length: 80) %></p>
+            <div class="mt-auto d-flex justify-content-between align-items-center">
+              <span class="fw-bold fs-5"><%= price_in_dollars(product.price_cents) %></span>
+              <%= link_to "View", product, class: "btn btn-primary btn-sm" %>
+            </div>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  </div>
+
+  <% if @products.empty? %>
+    <p class="text-muted">No products available yet.</p>
+  <% end %>
+  ```
+
+- [ ] **Step 3: Write the show view**
+
+  Create `app/views/products/show.html.erb`:
+  ```erb
+  <div class="row">
+    <div class="col-md-5">
+      <% if @product.image_url.present? %>
+        <img src="<%= @product.image_url %>" class="img-fluid rounded" alt="<%= @product.name %>">
+      <% end %>
+    </div>
+    <div class="col-md-7">
+      <h1><%= @product.name %></h1>
+      <p class="text-muted"><%= @product.description %></p>
+      <h3 class="text-success"><%= price_in_dollars(@product.price_cents) %></h3>
+
+      <%= form_with url: cart_items_path, method: :post, local: true do |f| %>
+        <%= f.hidden_field :product_id, value: @product.id %>
+        <div class="d-flex align-items-center gap-3 mt-3">
+          <div style="width: 80px;">
+            <%= f.number_field :quantity, value: 1, min: 1, max: 99, class: "form-control" %>
+          </div>
+          <%= f.submit "Add to Cart", class: "btn btn-primary" %>
+        </div>
+      <% end %>
+
+      <div class="mt-3">
+        <%= link_to "← Back to products", products_path, class: "text-muted" %>
+      </div>
+    </div>
+  </div>
+  ```
+
+- [ ] **Step 4: Write the failing controller tests**
+
+  Create `test/controllers/products_controller_test.rb`:
+  ```ruby
+  require "test_helper"
+
+  class ProductsControllerTest < ActionDispatch::IntegrationTest
+    test "GET index returns 200" do
+      get products_path
+      assert_response :success
+    end
+
+    test "GET index renders product names" do
+      get products_path
+      assert_select "h5.card-title", text: products(:tshirt).name
+    end
+
+    test "GET show returns 200" do
+      get product_path(products(:tshirt))
+      assert_response :success
+    end
+
+    test "GET show displays product name and price" do
+      product = products(:tshirt)
+      get product_path(product)
+      assert_select "h1", text: product.name
+      assert_match "$24.99", response.body
+    end
+
+    test "GET show 404 for missing product" do
+      assert_raises(ActiveRecord::RecordNotFound) do
+        get product_path(id: 99999)
+      end
+    end
+  end
+  ```
+
+- [ ] **Step 5: Run the tests**
+
+  ```
+  rails test test/controllers/products_controller_test.rb
+  ```
+  Expected: `5 runs, 5 assertions, 0 failures, 0 errors`
+
+- [ ] **Step 6: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: add ProductsController and public product views"
+  ```
+
+---
+
+## Task 7: Cart Class and ApplicationController Helper
+
+**Files:**
+- Create: `app/models/cart.rb`
+- Modify: `app/controllers/application_controller.rb`
+- Create: `test/models/cart_test.rb`
+
+- [ ] **Step 1: Write the Cart class**
+
+  Create `app/models/cart.rb`:
+  ```ruby
+  class Cart
+    def initialize(session)
+      @session = session
+      @session[:cart] ||= {}
+    end
+
+    def add_item(product_id, quantity = 1)
+      key = product_id.to_s
+      @session[:cart][key] ||= 0
+      @session[:cart][key] += quantity.to_i
+    end
+
+    def remove_item(product_id)
+      @session[:cart].delete(product_id.to_s)
+    end
+
+    def update_item(product_id, quantity)
+      quantity = quantity.to_i
+      quantity <= 0 ? remove_item(product_id) : @session[:cart][product_id.to_s] = quantity
+    end
+
+    def items
+      @session[:cart].filter_map do |product_id, quantity|
+        product = Product.find_by(id: product_id)
+        { product: product, quantity: quantity } if product
+      end
+    end
+
+    def total_cents
+      items.sum { |item| item[:product].price_cents * item[:quantity] }
+    end
+
+    def count
+      @session[:cart].values.sum
+    end
+
+    def empty?
+      @session[:cart].empty?
+    end
+
+    def clear
+      @session[:cart] = {}
+    end
+  end
+  ```
+
+- [ ] **Step 2: Add cart helper to ApplicationController**
+
+  Replace `app/controllers/application_controller.rb`:
+  ```ruby
+  class ApplicationController < ActionController::Base
+    helper_method :cart
+
+    private
+
+    def cart
+      @cart ||= Cart.new(session)
+    end
+  end
+  ```
+
+- [ ] **Step 3: Write the failing cart tests**
+
+  Create `test/models/cart_test.rb`:
+  ```ruby
+  require "test_helper"
+
+  class CartTest < ActiveSupport::TestCase
+    setup do
+      @session = {}
+      @cart = Cart.new(@session)
+    end
+
+    test "starts empty" do
+      assert @cart.empty?
+      assert_equal 0, @cart.count
+    end
+
+    test "add_item increases count" do
+      @cart.add_item(products(:tshirt).id, 2)
+      assert_equal 2, @cart.count
+      assert_not @cart.empty?
+    end
+
+    test "add_item to same product accumulates quantity" do
+      @cart.add_item(products(:tshirt).id, 1)
+      @cart.add_item(products(:tshirt).id, 1)
+      assert_equal 2, @cart.count
+    end
+
+    test "remove_item empties single-item cart" do
+      @cart.add_item(products(:tshirt).id, 1)
+      @cart.remove_item(products(:tshirt).id)
+      assert @cart.empty?
+    end
+
+    test "update_item sets quantity" do
+      @cart.add_item(products(:tshirt).id, 1)
+      @cart.update_item(products(:tshirt).id, 5)
+      assert_equal 5, @cart.count
+    end
+
+    test "update_item to 0 removes item" do
+      @cart.add_item(products(:tshirt).id, 1)
+      @cart.update_item(products(:tshirt).id, 0)
+      assert @cart.empty?
+    end
+
+    test "total_cents sums price times quantity" do
+      @cart.add_item(products(:tshirt).id, 2)   # 2499 * 2 = 4998
+      @cart.add_item(products(:poster).id, 1)   # 1499 * 1 = 1499
+      assert_equal 6497, @cart.total_cents
+    end
+
+    test "clear empties the cart" do
+      @cart.add_item(products(:tshirt).id, 3)
+      @cart.clear
+      assert @cart.empty?
+    end
+
+    test "items skips products that no longer exist" do
+      @session[:cart] = { "99999" => 1 }
+      cart = Cart.new(@session)
+      assert_empty cart.items
+    end
+  end
+  ```
+
+- [ ] **Step 4: Run the tests**
+
+  ```
+  rails test test/models/cart_test.rb
+  ```
+  Expected: `9 runs, 9 assertions, 0 failures, 0 errors`
+
+- [ ] **Step 5: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: add Cart class and ApplicationController cart helper"
+  ```
+
+---
+
+## Task 8: Cart Controller and Views
+
+**Files:**
+- Create: `app/controllers/cart_controller.rb`
+- Create: `app/controllers/cart_items_controller.rb`
+- Create: `app/views/cart/show.html.erb`
+- Create: `test/controllers/cart_items_controller_test.rb`
+
+- [ ] **Step 1: Write CartController**
+
+  Create `app/controllers/cart_controller.rb`:
+  ```ruby
+  class CartController < ApplicationController
+    def show
+      @cart = cart
+    end
+  end
+  ```
+
+- [ ] **Step 2: Write CartItemsController**
+
+  Create `app/controllers/cart_items_controller.rb`:
+  ```ruby
+  class CartItemsController < ApplicationController
+    def create
+      cart.add_item(params[:product_id], params[:quantity] || 1)
+      redirect_to cart_path, notice: "Item added to cart."
+    end
+
+    def update
+      cart.update_item(params[:id], params[:quantity])
+      redirect_to cart_path
+    end
+
+    def destroy
+      cart.remove_item(params[:id])
+      redirect_to cart_path, notice: "Item removed."
+    end
+  end
+  ```
+
+- [ ] **Step 3: Write the cart view**
+
+  Create `app/views/cart/show.html.erb`:
+  ```erb
+  <h1 class="mb-4">Your Cart</h1>
+
+  <% if @cart.empty? %>
+    <p class="text-muted">Your cart is empty.</p>
+    <%= link_to "Browse Products", products_path, class: "btn btn-primary" %>
+  <% else %>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Price</th>
+          <th>Quantity</th>
+          <th>Subtotal</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @cart.items.each do |item| %>
+          <tr>
+            <td><%= link_to item[:product].name, item[:product] %></td>
+            <td><%= price_in_dollars(item[:product].price_cents) %></td>
+            <td>
+              <%= form_with url: cart_item_path(item[:product].id), method: :patch, local: true do |f| %>
+                <div class="d-flex gap-1" style="width: 120px;">
+                  <%= f.number_field :quantity, value: item[:quantity], min: 1, max: 99, class: "form-control form-control-sm" %>
+                  <%= f.submit "Update", class: "btn btn-outline-secondary btn-sm" %>
+                </div>
+              <% end %>
+            </td>
+            <td><%= price_in_dollars(item[:product].price_cents * item[:quantity]) %></td>
+            <td>
+              <%= button_to "Remove", cart_item_path(item[:product].id), method: :delete, class: "btn btn-outline-danger btn-sm" %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" class="text-end fw-bold">Total</td>
+          <td class="fw-bold"><%= price_in_dollars(@cart.total_cents) %></td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div class="d-flex gap-2 mt-3">
+      <%= link_to "Continue Shopping", products_path, class: "btn btn-outline-secondary" %>
+      <%= link_to "Checkout →", new_order_path, class: "btn btn-success" %>
+    </div>
+  <% end %>
+  ```
+
+- [ ] **Step 4: Write the failing controller tests**
+
+  Create `test/controllers/cart_items_controller_test.rb`:
+  ```ruby
+  require "test_helper"
+
+  class CartItemsControllerTest < ActionDispatch::IntegrationTest
+    test "POST create adds item and redirects to cart" do
+      post cart_items_path, params: { product_id: products(:tshirt).id, quantity: 2 }
+      assert_redirected_to cart_path
+      follow_redirect!
+      assert_match "Item added to cart", response.body
+    end
+
+    test "DELETE destroy removes item and redirects" do
+      post cart_items_path, params: { product_id: products(:tshirt).id, quantity: 1 }
+      delete cart_item_path(products(:tshirt).id)
+      assert_redirected_to cart_path
+    end
+
+    test "PATCH update changes quantity" do
+      post cart_items_path, params: { product_id: products(:tshirt).id, quantity: 1 }
+      patch cart_item_path(products(:tshirt).id), params: { quantity: 3 }
+      assert_redirected_to cart_path
+    end
+  end
+  ```
+
+- [ ] **Step 5: Run the tests**
+
+  ```
+  rails test test/controllers/cart_items_controller_test.rb
+  ```
+  Expected: `3 runs, 3 assertions, 0 failures, 0 errors`
+
+- [ ] **Step 6: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: add cart controller, cart items controller, and cart view"
+  ```
+
+---
+
+## Task 9: Order and OrderItem Models
+
+**Files:**
+- Create: migrations (via generator)
+- Create: `app/models/order.rb`
+- Create: `app/models/order_item.rb`
+- Create: `test/models/order_test.rb`
+- Create: `test/models/order_item_test.rb`
+- Create: `test/fixtures/orders.yml`
+- Create: `test/fixtures/order_items.yml`
+
+- [ ] **Step 1: Generate migrations**
+
+  ```
+  rails generate migration CreateOrders customer_name:string customer_email:string total_cents:integer status:string
+  rails generate migration CreateOrderItems order:references product:references quantity:integer unit_price:integer
+  ```
+
+- [ ] **Step 2: Run migrations**
+
+  ```
+  rails db:migrate
+  ```
+
+- [ ] **Step 3: Write the Order model**
+
+  Create `app/models/order.rb`:
+  ```ruby
+  class Order < ApplicationRecord
+    has_many :order_items, dependent: :destroy
+    has_many :products, through: :order_items
+
+    validates :customer_name,  presence: true
+    validates :customer_email, presence: true,
+              format: { with: URI::MailTo::EMAIL_REGEXP, message: "is not valid" }
+    validates :total_cents, presence: true,
+              numericality: { only_integer: true, greater_than: 0 }
+    validates :status, presence: true
+  end
+  ```
+
+- [ ] **Step 4: Write the OrderItem model**
+
+  Create `app/models/order_item.rb`:
+  ```ruby
+  class OrderItem < ApplicationRecord
+    belongs_to :order
+    belongs_to :product
+
+    validates :quantity,   presence: true, numericality: { only_integer: true, greater_than: 0 }
+    validates :unit_price, presence: true, numericality: { only_integer: true, greater_than: 0 }
+
+    def subtotal_cents
+      quantity * unit_price
+    end
+  end
+  ```
+
+- [ ] **Step 5: Write fixtures**
+
+  Create `test/fixtures/orders.yml`:
+  ```yaml
+  pending_order:
+    customer_name: Jane Smith
+    customer_email: jane@example.com
+    total_cents: 3998
+    status: pending
+  ```
+
+  Create `test/fixtures/order_items.yml`:
+  ```yaml
+  one:
+    order: pending_order
+    product: tshirt
+    quantity: 2
+    unit_price: 1999
+  ```
+
+- [ ] **Step 6: Write the failing Order model tests**
+
+  Create `test/models/order_test.rb`:
+  ```ruby
+  require "test_helper"
+
+  class OrderTest < ActiveSupport::TestCase
+    test "valid with required attributes" do
+      order = Order.new(
+        customer_name: "John",
+        customer_email: "john@example.com",
+        total_cents: 999,
+        status: "pending"
+      )
+      assert order.valid?
+    end
+
+    test "invalid without customer_name" do
+      order = Order.new(customer_email: "a@b.com", total_cents: 999, status: "pending")
+      assert_not order.valid?
+    end
+
+    test "invalid without customer_email" do
+      order = Order.new(customer_name: "John", total_cents: 999, status: "pending")
+      assert_not order.valid?
+    end
+
+    test "invalid with malformed email" do
+      order = Order.new(customer_name: "John", customer_email: "notanemail", total_cents: 999, status: "pending")
+      assert_not order.valid?
+    end
+
+    test "invalid with total_cents of zero" do
+      order = Order.new(customer_name: "John", customer_email: "j@example.com", total_cents: 0, status: "pending")
+      assert_not order.valid?
+    end
+
+    test "has_many order_items" do
+      order = orders(:pending_order)
+      assert_equal 1, order.order_items.count
+    end
+  end
+  ```
+
+  Create `test/models/order_item_test.rb`:
+  ```ruby
+  require "test_helper"
+
+  class OrderItemTest < ActiveSupport::TestCase
+    test "valid with required attributes" do
+      item = OrderItem.new(
+        order: orders(:pending_order),
+        product: products(:tshirt),
+        quantity: 2,
+        unit_price: 2499
+      )
+      assert item.valid?
+    end
+
+    test "invalid with zero quantity" do
+      item = OrderItem.new(order: orders(:pending_order), product: products(:tshirt), quantity: 0, unit_price: 2499)
+      assert_not item.valid?
+    end
+
+    test "subtotal_cents returns quantity times unit_price" do
+      item = OrderItem.new(quantity: 3, unit_price: 1000)
+      assert_equal 3000, item.subtotal_cents
+    end
+  end
+  ```
+
+- [ ] **Step 7: Run the tests**
+
+  ```
+  rails test test/models/order_test.rb test/models/order_item_test.rb
+  ```
+  Expected: `9 runs, 9 assertions, 0 failures, 0 errors`
+
+- [ ] **Step 8: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: add Order and OrderItem models with validations"
+  ```
+
+---
+
+## Task 10: Orders Controller and Views
+
+**Files:**
+- Create: `app/controllers/orders_controller.rb`
+- Create: `app/views/orders/new.html.erb`
+- Create: `app/views/orders/show.html.erb`
+- Create: `test/controllers/orders_controller_test.rb`
+
+- [ ] **Step 1: Write the OrdersController**
+
+  Create `app/controllers/orders_controller.rb`:
+  ```ruby
+  class OrdersController < ApplicationController
+    def new
+      redirect_to(cart_path, alert: "Your cart is empty.") and return if cart.empty?
+      @order = Order.new
+      @cart  = cart
+    end
+
+    def create
+      @cart = cart
+      if @cart.empty?
+        redirect_to cart_path, alert: "Your cart is empty."
+        return
+      end
+
+      @order = Order.new(order_params)
+      @order.total_cents = @cart.total_cents
+      @order.status      = "pending"
+
+      if @order.save
+        @cart.items.each do |item|
+          @order.order_items.create!(
+            product:    item[:product],
+            quantity:   item[:quantity],
+            unit_price: item[:product].price_cents
+          )
+        end
+        cart.clear
+        redirect_to @order, notice: "Order placed! Thanks for your purchase."
+      else
+        render :new, status: :unprocessable_entity
+      end
+    end
+
+    def show
+      @order = Order.find(params[:id])
+    end
+
+    private
+
+    def order_params
+      params.require(:order).permit(:customer_name, :customer_email)
+    end
+  end
+  ```
+
+- [ ] **Step 2: Write the checkout form view**
+
+  Create `app/views/orders/new.html.erb`:
+  ```erb
+  <div class="row">
+    <div class="col-md-7">
+      <h1 class="mb-4">Checkout</h1>
+
+      <%= form_with model: @order, url: orders_path, local: true do |f| %>
+        <% if @order.errors.any? %>
+          <div class="alert alert-danger">
+            <ul class="mb-0">
+              <% @order.errors.full_messages.each do |msg| %>
+                <li><%= msg %></li>
+              <% end %>
+            </ul>
+          </div>
+        <% end %>
+
+        <div class="mb-3">
+          <%= f.label :customer_name, "Full Name", class: "form-label" %>
+          <%= f.text_field :customer_name, class: "form-control", placeholder: "Jane Smith" %>
+        </div>
+
+        <div class="mb-3">
+          <%= f.label :customer_email, "Email", class: "form-label" %>
+          <%= f.email_field :customer_email, class: "form-control", placeholder: "jane@example.com" %>
+        </div>
+
+        <%= f.submit "Place Order →", class: "btn btn-success btn-lg w-100 mt-2" %>
+      <% end %>
+
+      <div class="mt-3">
+        <%= link_to "← Back to cart", cart_path, class: "text-muted" %>
+      </div>
+    </div>
+
+    <div class="col-md-5">
+      <div class="card">
+        <div class="card-header fw-bold">Order Summary</div>
+        <div class="card-body">
+          <table class="table table-sm">
+            <% @cart.items.each do |item| %>
+              <tr>
+                <td><%= item[:product].name %> &times; <%= item[:quantity] %></td>
+                <td class="text-end"><%= price_in_dollars(item[:product].price_cents * item[:quantity]) %></td>
+              </tr>
+            <% end %>
+            <tr class="fw-bold">
+              <td>Total</td>
+              <td class="text-end"><%= price_in_dollars(@cart.total_cents) %></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  ```
+
+- [ ] **Step 3: Write the confirmation view**
+
+  Create `app/views/orders/show.html.erb`:
+  ```erb
+  <div class="text-center py-5">
+    <h1 class="display-5 text-success">&#10003; Order Confirmed!</h1>
+    <p class="lead">Thanks, <%= @order.customer_name %>. A confirmation will be sent to <strong><%= @order.customer_email %></strong>.</p>
+    <p class="text-muted">Order #<%= @order.id %></p>
+  </div>
+
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header fw-bold">Your Items</div>
+        <div class="card-body">
+          <table class="table table-sm">
+            <% @order.order_items.each do |item| %>
+              <tr>
+                <td><%= item.product.name %> &times; <%= item.quantity %></td>
+                <td class="text-end"><%= price_in_dollars(item.subtotal_cents) %></td>
+              </tr>
+            <% end %>
+            <tr class="fw-bold">
+              <td>Total</td>
+              <td class="text-end"><%= price_in_dollars(@order.total_cents) %></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+      <div class="text-center mt-4">
+        <%= link_to "Continue Shopping", products_path, class: "btn btn-primary" %>
+      </div>
+    </div>
+  </div>
+  ```
+
+- [ ] **Step 4: Write the failing controller tests**
+
+  Create `test/controllers/orders_controller_test.rb`:
+  ```ruby
+  require "test_helper"
+
+  class OrdersControllerTest < ActionDispatch::IntegrationTest
+    test "GET new redirects to cart when cart is empty" do
+      get new_order_path
+      assert_redirected_to cart_path
+    end
+
+    test "GET new renders checkout form when cart has items" do
+      post cart_items_path, params: { product_id: products(:tshirt).id, quantity: 1 }
+      get new_order_path
+      assert_response :success
+      assert_select "h1", text: "Checkout"
+    end
+
+    test "POST create places order and clears cart" do
+      post cart_items_path, params: { product_id: products(:tshirt).id, quantity: 2 }
+      assert_difference "Order.count", 1 do
+        assert_difference "OrderItem.count", 1 do
+          post orders_path, params: {
+            order: { customer_name: "Test User", customer_email: "test@example.com" }
+          }
+        end
+      end
+      order = Order.last
+      assert_redirected_to order_path(order)
+      assert_equal 4998, order.total_cents
+    end
+
+    test "POST create re-renders form with errors on invalid data" do
+      post cart_items_path, params: { product_id: products(:tshirt).id, quantity: 1 }
+      post orders_path, params: { order: { customer_name: "", customer_email: "bad" } }
+      assert_response :unprocessable_entity
+    end
+
+    test "GET show renders confirmation page" do
+      get order_path(orders(:pending_order))
+      assert_response :success
+      assert_select "h1", text: /Order Confirmed/
+    end
+  end
+  ```
+
+- [ ] **Step 5: Run the tests**
+
+  ```
+  rails test test/controllers/orders_controller_test.rb
+  ```
+  Expected: `5 runs, 7 assertions, 0 failures, 0 errors`
+
+- [ ] **Step 6: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: add OrdersController and checkout views"
+  ```
+
+---
+
+## Task 11: Devise AdminUser
+
+**Files:**
+- Create: `config/initializers/devise.rb` (via generator)
+- Create: `app/models/admin_user.rb` (via generator)
+- Create: migration (via generator)
+- Create: `test/fixtures/admin_users.yml`
+
+- [ ] **Step 1: Install Devise**
+
+  ```
+  rails generate devise:install
+  ```
+
+  Open `config/environments/development.rb` and add inside the `Rails.application.configure do` block:
+  ```ruby
+  config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
+  ```
+
+- [ ] **Step 2: Generate AdminUser model**
+
+  ```
+  rails generate devise AdminUser
+  ```
+
+- [ ] **Step 3: Run migration**
+
+  ```
+  rails db:migrate
+  ```
+
+- [ ] **Step 4: Lock down Devise to login/logout only**
+
+  Open the generated migration and verify it created the `admin_users` table. Then open `app/models/admin_user.rb` and replace with:
+  ```ruby
+  class AdminUser < ApplicationRecord
+    devise :database_authenticatable, :rememberable, :validatable
+  end
+  ```
+  (Removes `:recoverable`, `:confirmable`, etc. — we don't have email set up.)
+
+- [ ] **Step 5: Write the admin_users fixture**
+
+  Create `test/fixtures/admin_users.yml`:
+  ```yaml
+  one:
+    email: admin@storefront.test
+    encrypted_password: <%= BCrypt::Password.create("password123") %>
+  ```
+
+- [ ] **Step 6: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: install Devise and generate AdminUser"
+  ```
+
+---
+
+## Task 12: Admin Base Controller and Admin Products
+
+**Files:**
+- Create: `app/controllers/admin/base_controller.rb`
+- Create: `app/controllers/admin/products_controller.rb`
+- Create: `app/views/admin/products/index.html.erb`
+- Create: `app/views/admin/products/new.html.erb`
+- Create: `app/views/admin/products/edit.html.erb`
+- Create: `app/views/admin/products/_form.html.erb`
+- Create: `test/controllers/admin/products_controller_test.rb`
+
+- [ ] **Step 1: Write Admin::BaseController**
+
+  Create `app/controllers/admin/base_controller.rb`:
+  ```ruby
+  class Admin::BaseController < ApplicationController
+    layout "admin"
+    before_action :authenticate_admin_user!
+  end
+  ```
+
+- [ ] **Step 2: Write Admin::ProductsController**
+
+  Create `app/controllers/admin/products_controller.rb`:
+  ```ruby
+  class Admin::ProductsController < Admin::BaseController
+    def index
+      @products = Product.order(:name)
+    end
+
+    def new
+      @product = Product.new
+    end
+
+    def create
+      @product = Product.new(product_params)
+      if @product.save
+        redirect_to admin_products_path, notice: "Product created."
+      else
+        render :new, status: :unprocessable_entity
+      end
+    end
+
+    def edit
+      @product = Product.find(params[:id])
+    end
+
+    def update
+      @product = Product.find(params[:id])
+      if @product.update(product_params)
+        redirect_to admin_products_path, notice: "Product updated."
+      else
+        render :edit, status: :unprocessable_entity
+      end
+    end
+
+    def destroy
+      Product.find(params[:id]).destroy
+      redirect_to admin_products_path, notice: "Product deleted."
+    end
+
+    private
+
+    def product_params
+      params.require(:product).permit(:name, :description, :price, :image_url)
+    end
+  end
+  ```
+
+  Note: `price` (not `price_cents`) is permitted because the Product model's virtual `price=` setter handles the conversion.
+
+- [ ] **Step 3: Write the shared form partial**
+
+  Create `app/views/admin/products/_form.html.erb`:
+  ```erb
+  <%= form_with model: [:admin, product], local: true do |f| %>
+    <% if product.errors.any? %>
+      <div class="alert alert-danger">
+        <ul class="mb-0">
+          <% product.errors.full_messages.each do |msg| %>
+            <li><%= msg %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <div class="mb-3">
+      <%= f.label :name, class: "form-label" %>
+      <%= f.text_field :name, class: "form-control" %>
+    </div>
+
+    <div class="mb-3">
+      <%= f.label :description, class: "form-label" %>
+      <%= f.text_area :description, rows: 4, class: "form-control" %>
+    </div>
+
+    <div class="mb-3">
+      <%= f.label :price, "Price ($)", class: "form-label" %>
+      <%= f.number_field :price, step: 0.01, min: 0.01,
+          value: product.price_cents ? product.price_cents.to_f / 100 : nil,
+          class: "form-control" %>
+    </div>
+
+    <div class="mb-3">
+      <%= f.label :image_url, "Image URL", class: "form-label" %>
+      <%= f.url_field :image_url, class: "form-control", placeholder: "https://..." %>
+    </div>
+
+    <%= f.submit class: "btn btn-primary" %>
+    <%= link_to "Cancel", admin_products_path, class: "btn btn-outline-secondary ms-2" %>
+  <% end %>
+  ```
+
+- [ ] **Step 4: Write the index view**
+
+  Create `app/views/admin/products/index.html.erb`:
+  ```erb
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Products</h1>
+    <%= link_to "New Product", new_admin_product_path, class: "btn btn-primary" %>
+  </div>
+
+  <table class="table table-hover">
+    <thead class="table-dark">
+      <tr>
+        <th>Name</th>
+        <th>Price</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @products.each do |product| %>
+        <tr>
+          <td><%= product.name %></td>
+          <td><%= price_in_dollars(product.price_cents) %></td>
+          <td>
+            <%= link_to "Edit", edit_admin_product_path(product), class: "btn btn-sm btn-outline-primary me-1" %>
+            <%= button_to "Delete", admin_product_path(product), method: :delete,
+                class: "btn btn-sm btn-outline-danger",
+                data: { confirm: "Delete #{product.name}?" } %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <% if @products.empty? %>
+    <p class="text-muted">No products yet. <%= link_to "Add one", new_admin_product_path %>.</p>
+  <% end %>
+  ```
+
+- [ ] **Step 5: Write new and edit views**
+
+  Create `app/views/admin/products/new.html.erb`:
+  ```erb
+  <h1 class="mb-4">New Product</h1>
+  <%= render "form", product: @product %>
+  ```
+
+  Create `app/views/admin/products/edit.html.erb`:
+  ```erb
+  <h1 class="mb-4">Edit Product</h1>
+  <%= render "form", product: @product %>
+  ```
+
+- [ ] **Step 6: Write the failing admin controller tests**
+
+  Create `test/controllers/admin/products_controller_test.rb`:
+  ```ruby
+  require "test_helper"
+
+  class Admin::ProductsControllerTest < ActionDispatch::IntegrationTest
+    setup do
+      @admin = admin_users(:one)
+    end
+
+    test "GET index redirects to login when not authenticated" do
+      get admin_products_path
+      assert_redirected_to new_admin_user_session_path
+    end
+
+    test "GET index returns 200 when authenticated" do
+      sign_in @admin
+      get admin_products_path
+      assert_response :success
+    end
+
+    test "POST create creates product and redirects" do
+      sign_in @admin
+      assert_difference "Product.count", 1 do
+        post admin_products_path, params: {
+          product: { name: "New Item", price: "12.99", description: "Great item" }
+        }
+      end
+      assert_redirected_to admin_products_path
+      assert_equal 1299, Product.last.price_cents
+    end
+
+    test "DELETE destroy removes product" do
+      sign_in @admin
+      product = products(:tshirt)
+      assert_difference "Product.count", -1 do
+        delete admin_product_path(product)
+      end
+      assert_redirected_to admin_products_path
+    end
+
+    test "PATCH update changes product attributes" do
+      sign_in @admin
+      patch admin_product_path(products(:tshirt)), params: {
+        product: { name: "Updated Tee", price: "29.99" }
+      }
+      assert_redirected_to admin_products_path
+      assert_equal "Updated Tee", products(:tshirt).reload.name
+      assert_equal 2999, products(:tshirt).reload.price_cents
+    end
+  end
+  ```
+
+  Note: `sign_in` is provided by Devise test helpers. Add this to `test/test_helper.rb`:
+  ```ruby
+  include Devise::Test::IntegrationHelpers
+  ```
+
+- [ ] **Step 7: Run the tests**
+
+  ```
+  rails test test/controllers/admin/products_controller_test.rb
+  ```
+  Expected: `5 runs, 6 assertions, 0 failures, 0 errors`
+
+- [ ] **Step 8: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: add admin base controller, admin products CRUD, and admin views"
+  ```
+
+---
+
+## Task 13: Seed Data
+
+**Files:**
+- Modify: `db/seeds.rb`
+
+- [ ] **Step 1: Write seeds.rb**
+
+  Replace `db/seeds.rb`:
+  ```ruby
+  # Admin user — credentials from ENV in production, defaults for development
+  AdminUser.find_or_create_by!(email: ENV.fetch("ADMIN_EMAIL", "admin@storefront.dev")) do |u|
+    u.password = ENV.fetch("ADMIN_PASSWORD", "password123")
+    u.password_confirmation = ENV.fetch("ADMIN_PASSWORD", "password123")
+  end
+
+  # Sample products
+  products = [
+    { name: "Classic T-Shirt",     price: 24.99, description: "100% cotton, available in all sizes.", image_url: "https://placehold.co/300x400?text=T-Shirt" },
+    { name: "Enamel Pin",          price: 8.99,  description: "Hard enamel, 1.5\" size, rubber clutch.", image_url: "https://placehold.co/300x300?text=Pin" },
+    { name: "Art Poster 18x24",    price: 22.00, description: "Glossy print on 100lb paper.", image_url: "https://placehold.co/300x400?text=Poster" },
+    { name: "Tote Bag",            price: 18.00, description: "Natural canvas, screen-printed.", image_url: "https://placehold.co/300x300?text=Tote" },
+    { name: "Snapback Hat",        price: 32.00, description: "Structured 6-panel with flat brim.", image_url: "https://placehold.co/300x300?text=Hat" },
+    { name: "Sticker Pack (5)",    price: 6.00,  description: "Weatherproof vinyl stickers.", image_url: "https://placehold.co/300x300?text=Stickers" },
+    { name: "Long-Sleeve Shirt",   price: 34.99, description: "Midweight fleece, cozy fit.", image_url: "https://placehold.co/300x400?text=Long+Sleeve" },
+    { name: "Vinyl Record",        price: 29.99, description: "180g black vinyl, inner sleeve.", image_url: "https://placehold.co/300x300?text=Vinyl" }
+  ]
+
+  products.each do |attrs|
+    Product.find_or_create_by!(name: attrs[:name]) do |p|
+      p.price       = attrs[:price]
+      p.description = attrs[:description]
+      p.image_url   = attrs[:image_url]
+    end
+  end
+
+  puts "Seeded #{Product.count} products and 1 admin user."
+  ```
+
+- [ ] **Step 2: Run seeds**
+
+  ```
+  rails db:seed
+  ```
+  Expected:
+  ```
+  Seeded 8 products and 1 admin user.
+  ```
+
+- [ ] **Step 3: Boot the server and verify manually**
+
+  ```
+  rails server
+  ```
+  Open http://localhost:3000 — verify:
+  - Product grid loads with 8 products
+  - Clicking a product opens the detail page
+  - Adding to cart updates the cart count in the navbar
+  - Cart shows line items and totals correctly
+  - Checkout form submits and shows confirmation
+  - http://localhost:3000/admin/login accepts `admin@storefront.dev` / `password123`
+  - Admin product list shows all 8 products
+  - Creating, editing, deleting a product works
+
+- [ ] **Step 4: Run the full test suite**
+
+  ```
+  rails test
+  ```
+  Expected: all tests pass, 0 failures, 0 errors.
+
+- [ ] **Step 5: Commit**
+
+  ```
+  git add .
+  git commit -m "feat: add seed data and verify full app flow"
+  ```
+
+---
+
+## Task 14: Deploy to Render
+
+**Files:**
+- Create: `Procfile`
+
+- [ ] **Step 1: Create Procfile**
+
+  Create `Procfile` in the project root:
+  ```
+  web: bundle exec puma -C config/puma.rb
+  ```
+
+- [ ] **Step 2: Push to GitHub**
+
+  Create a new repository at github.com (name it `StoreFront`). Then:
+  ```
+  git remote add origin https://github.com/YOUR_USERNAME/StoreFront.git
+  git branch -M main
+  git push -u origin main
+  ```
+
+- [ ] **Step 3: Create the Render PostgreSQL database**
+
+  - Go to https://dashboard.render.com
+  - Click "New +" → "PostgreSQL"
+  - Name: `storefront-db`, Region: closest to you
+  - Plan: Free
+  - Click "Create Database"
+  - Copy the **Internal Database URL** — you'll need it in the next step
+
+- [ ] **Step 4: Create the Render web service**
+
+  - Click "New +" → "Web Service"
+  - Connect your GitHub repo
+  - Settings:
+    - **Name:** `storefront`
+    - **Runtime:** Ruby
+    - **Build Command:** `bundle install && bundle exec rails assets:precompile && bundle exec rails db:migrate`
+    - **Start Command:** `bundle exec puma -C config/puma.rb`
+    - **Plan:** Free
+
+- [ ] **Step 5: Set environment variables in Render**
+
+  In the web service Environment tab, add:
+  ```
+  DATABASE_URL         = <Internal Database URL from step 3>
+  RAILS_ENV            = production
+  RAILS_MASTER_KEY     = <contents of config/master.key>
+  ADMIN_EMAIL          = admin@yourdomain.com
+  ADMIN_PASSWORD       = <choose a strong password>
+  ```
+
+- [ ] **Step 6: Deploy and seed**
+
+  Trigger the first deploy in Render. Once live, open the Render shell and run:
+  ```
+  rails db:seed
+  ```
+
+- [ ] **Step 7: Add Cloudflare DNS**
+
+  In your Cloudflare dashboard:
+  - Add a CNAME record:
+    - **Name:** `storefront` (or whatever subdomain you want)
+    - **Target:** your Render URL (`storefront.onrender.com`)
+    - **Proxy:** On (orange cloud)
+  - SSL/TLS mode: Full
+
+  Your store is now live at `storefront.yourdomain.com`.
+
+- [ ] **Step 8: Final commit**
+
+  ```
+  git add Procfile
+  git commit -m "chore: add Procfile for Render deployment"
+  git push
+  ```
+
+---
+
+## Self-Review
+
+**Spec coverage check:**
+- ✅ Public product index + show
+- ✅ Session-based cart (add, update, remove)
+- ✅ Checkout form → order + order items created → cart cleared
+- ✅ Order confirmation page
+- ✅ Devise admin login (AdminUser)
+- ✅ Admin product CRUD
+- ✅ Bootstrap layout (public + admin)
+- ✅ price_in_dollars helper
+- ✅ Seed data (admin + 8 products)
+- ✅ Deploy to Render + Cloudflare
+
+**Placeholder scan:** No TBDs, all steps include complete code.
+
+**Type consistency:**
+- `price_cents` integer column throughout — Product, Order, OrderItem
+- `cart.total_cents`, `item.subtotal_cents` all return integers
+- `price` virtual attribute on Product converts cents ↔ dollars consistently
+- `admin_products_path` / `admin_product_path` match `namespace :admin` routes
+- `Admin::BaseController` correctly namespaced, all admin controllers inherit from it
+- `sign_in` helper added to `test_helper.rb` before it's used in admin tests
