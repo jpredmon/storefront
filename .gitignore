@@ -26,3 +26,6 @@
 # Ignore key files for decrypting credentials and more.
 /config/*.key
 
+# Ignore curl cookie jars from manual testing.
+*cookies*.txt
+

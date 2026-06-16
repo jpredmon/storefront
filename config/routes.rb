@@ -1,12 +1,12 @@
 Rails.application.routes.draw do
   root "products#index"
 
-  resources :products, only: [:index, :show]
+  resources :products, only: [ :index, :show ]
 
-  resource  :cart,       only: [:show]
-  resources :cart_items, only: [:create, :update, :destroy]
+  resource  :cart,       only: [ :show ]
+  resources :cart_items, only: [ :create, :update, :destroy ]
 
-  resources :orders, only: [:new, :create, :show]
+  resources :orders, only: [ :new, :create, :show ]
 
   namespace :admin do
     devise_for :admin_users,
