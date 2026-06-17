@@ -11,13 +11,20 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <nav class="navbar navbar-expand-sm navbar-dark bg-dark">
       <div class="container">
         <%= link_to "StoreFront", root_path, class: "navbar-brand fw-bold" %>
-        <div class="ms-auto">
-          <%= link_to cart_path, class: "btn btn-outline-light btn-sm" do %>
-            🛒 Cart (<%= cart.count %>)
-          <% end %>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <%= link_to cart_path, class: "btn btn-outline-light btn-sm" do %>
+                Cart (<%= cart.count %>)
+              <% end %>
+            </li>
+          </ul>
         </div>
       </div>
     </nav>
