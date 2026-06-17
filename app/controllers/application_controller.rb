@@ -12,4 +12,8 @@ class ApplicationController < ActionController::Base
   def cart
     @cart ||= Cart.new(session)
   end
+
+  def after_sign_in_path_for(resource)
+    admin_products_path
+  end
 end
