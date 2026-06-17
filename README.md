@@ -2,6 +2,8 @@
 
 A classic Rails MVC storefront with public product browsing, session-based cart, order placement, and a Devise-protected admin panel for managing products.
 
+**Live at:** https://store.jpredmon.com
+
 Built with Rails 8.1.3, PostgreSQL, Bootstrap 5, and Minitest.
 
 ## Features
@@ -12,13 +14,26 @@ Built with Rails 8.1.3, PostgreSQL, Bootstrap 5, and Minitest.
 - Session-based cart (add, update quantity, remove)
 - Checkout with customer name/email
 - Order confirmation page
+- Mobile-responsive layout
 
 **Admin panel** (`/admin`):
 - Devise authentication
 - Full CRUD for products (create, edit, delete)
 - Separate admin layout
+- Admin login at `/admin/login` (no public link by design)
 
-## Setup
+## Live deployment
+
+Hosted on [Render](https://render.com) with [Cloudflare](https://cloudflare.com) as DNS proxy and SSL termination.
+
+- **URL:** https://store.jpredmon.com
+- **Render service:** Docker-based, auto-deploys from GitHub `master` branch
+- **Database:** Render PostgreSQL
+- **SSL:** Cloudflare Full (Strict) mode
+
+The free Render tier spins down after 15 minutes of inactivity. First visit after sleep takes ~30 seconds.
+
+## Local setup
 
 ```sh
 # Install dependencies
@@ -39,12 +54,14 @@ Then open http://localhost:3000.
 
 ## Admin access
 
-After seeding, log in at http://localhost:3000/admin/login:
+**Local (after seeding):**
+- URL: http://localhost:3000/admin/login
+- Email: `admin@storefront.dev`
+- Password: `password123`
 
-- **Email:** `admin@storefront.dev`
-- **Password:** `password123`
-
-Credentials are configurable via `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables.
+**Production:**
+- URL: https://store.jpredmon.com/admin/login
+- Credentials configured via `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables on Render
 
 ## Tests
 
@@ -61,11 +78,13 @@ rails test
 - Devise 5.0 (admin auth)
 - Bootstrap 5 (CDN)
 - Propshaft (asset pipeline)
+- Turbo + Stimulus (via importmap)
 - Minitest
 
 ## Architecture
 
-- Server-rendered MVC -- no Hotwire, no SPA, no JS framework
+- Server-rendered MVC -- no SPA, no JS framework
 - Cart is a plain Ruby class wrapping the session hash (no database table)
 - Prices stored as integers (`price_cents`) to avoid floating-point issues
 - `Product#price=` virtual setter converts dollar input to cents
+- Order placement wrapped in a database transaction for atomicity
