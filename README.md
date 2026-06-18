@@ -4,6 +4,8 @@ A classic Rails MVC storefront with public product browsing, session-based cart,
 
 **Live at:** https://store.jpredmon.com
 
+![StoreFront app screenshot](docs/storefront-screenshot.png)
+
 Built with Rails 8.1.3, PostgreSQL, Bootstrap 5, and Minitest.
 
 ## Features
