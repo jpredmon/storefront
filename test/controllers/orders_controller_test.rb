@@ -33,9 +33,18 @@ class OrdersControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
-  test "GET show renders confirmation page" do
-    get order_path(orders(:pending_order))
+  test "GET show renders confirmation page for an order placed in this session" do
+    post cart_items_path, params: { product_id: products(:tshirt).id, quantity: 1 }
+    post orders_path, params: {
+      order: { customer_name: "Test User", customer_email: "test@example.com" }
+    }
+    follow_redirect!
     assert_response :success
     assert_select "h1", text: /Order Confirmed/
+  end
+
+  test "GET show returns 404 for an order not placed in this session" do
+    get order_path(orders(:pending_order))
+    assert_response :not_found
   end
 end

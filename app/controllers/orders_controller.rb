@@ -26,6 +26,8 @@ class OrdersController < ApplicationController
           )
         end
         cart.clear
+        # Remember which orders this browser placed; only those are viewable in #show.
+        session[:order_ids] = Array(session[:order_ids]) << @order.id
         redirect_to @order, notice: "Order placed! Thanks for your purchase."
       else
         render :new, status: :unprocessable_entity
@@ -34,7 +36,9 @@ class OrdersController < ApplicationController
   end
 
   def show
-    @order = Order.find(params[:id])
+    # Scoping to this session's orders makes any other id a 404, so customer details
+    # can't be read by guessing ids.
+    @order = Order.includes(order_items: :product).where(id: session[:order_ids]).find(params[:id])
   end
 
   private

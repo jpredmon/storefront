@@ -58,4 +58,34 @@ class CartTest < ActiveSupport::TestCase
     cart = Cart.new(@session)
     assert_empty cart.items
   end
+
+  test "count and empty? ignore products that no longer exist" do
+    @session[:cart] = { "99999" => 3 }
+    cart = Cart.new(@session)
+    assert_equal 0, cart.count
+    assert cart.empty?
+  end
+
+  test "add_item ignores zero and negative quantities" do
+    assert_not @cart.add_item(products(:tshirt).id, 0)
+    assert_not @cart.add_item(products(:tshirt).id, -3)
+    assert @cart.empty?
+  end
+
+  test "add_item caps quantity at MAX_QUANTITY" do
+    @cart.add_item(products(:tshirt).id, 60)
+    @cart.add_item(products(:tshirt).id, 60)
+    assert_equal Cart::MAX_QUANTITY, @cart.count
+  end
+
+  test "update_item caps quantity at MAX_QUANTITY" do
+    @cart.add_item(products(:tshirt).id, 1)
+    @cart.update_item(products(:tshirt).id, 1_000_000)
+    assert_equal Cart::MAX_QUANTITY, @cart.count
+  end
+
+  test "update_item does not add products that are not in the cart" do
+    @cart.update_item(products(:tshirt).id, 5)
+    assert @cart.empty?
+  end
 end

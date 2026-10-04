@@ -1,7 +1,11 @@
 class CartItemsController < ApplicationController
   def create
-    cart.add_item(params[:product_id], params[:quantity] || 1)
-    redirect_to cart_path, notice: "Item added to cart."
+    product = Product.find(params[:product_id])
+    if cart.add_item(product.id, params[:quantity] || 1)
+      redirect_to cart_path, notice: "Item added to cart."
+    else
+      redirect_to product, alert: "Quantity must be at least 1."
+    end
   end
 
   def update

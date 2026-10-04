@@ -20,7 +20,7 @@
           <%= link_to "Edit", edit_admin_product_path(product), class: "btn btn-sm btn-outline-primary me-1" %>
           <%= button_to "Delete", admin_product_path(product), method: :delete,
               class: "btn btn-sm btn-outline-danger",
-              data: { confirm: "Delete #{product.name}?" } %>
+              form: { data: { turbo_confirm: "Delete #{product.name}?" } } %>
         </td>
       </tr>
     <% end %>

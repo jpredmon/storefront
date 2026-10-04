@@ -1,13 +1,19 @@
 class Cart
+  MAX_QUANTITY = 99
+
   def initialize(session)
     @session = session
     @session[:cart] ||= {}
   end
 
+  # Returns false (and adds nothing) for a quantity below 1.
   def add_item(product_id, quantity = 1)
+    quantity = quantity.to_i
+    return false if quantity < 1
+
     key = product_id.to_s
-    @session[:cart][key] ||= 0
-    @session[:cart][key] += quantity.to_i
+    @session[:cart][key] = [ @session[:cart].fetch(key, 0) + quantity, MAX_QUANTITY ].min
+    true
   end
 
   def remove_item(product_id)
@@ -15,8 +21,11 @@ class Cart
   end
 
   def update_item(product_id, quantity)
+    key = product_id.to_s
+    return unless @session[:cart].key?(key)
+
     quantity = quantity.to_i
-    quantity <= 0 ? remove_item(product_id) : @session[:cart][product_id.to_s] = quantity
+    quantity <= 0 ? remove_item(product_id) : @session[:cart][key] = [ quantity, MAX_QUANTITY ].min
   end
 
   def items
@@ -31,12 +40,13 @@ class Cart
     items.sum { |item| item[:product].price_cents * item[:quantity] }
   end
 
+  # count and empty? go through items so products deleted since being added don't count.
   def count
-    @session[:cart].values.sum
+    items.sum { |item| item[:quantity] }
   end
 
   def empty?
-    @session[:cart].empty?
+    items.empty?
   end
 
   def clear

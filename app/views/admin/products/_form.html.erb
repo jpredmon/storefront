@@ -21,8 +21,7 @@
 
   <div class="mb-3">
     <%= f.label :price, "Price ($)", class: "form-label" %>
-    <%= f.number_field :price, step: 0.01, min: 0.01,
-        value: product.price_cents ? product.price_cents.to_f / 100 : nil,
+    <%= f.number_field :price, step: 0.01, min: 0.01, value: product.price&.to_s("F"),
         class: "form-control" %>
   </div>
 

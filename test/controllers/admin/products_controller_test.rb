@@ -36,6 +36,45 @@ class Admin::ProductsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to admin_products_path
   end
 
+  test "DELETE destroy keeps a product that has been ordered and shows an alert" do
+    sign_in @admin
+    product = products(:tshirt)
+    orders(:pending_order).order_items.create!(product: product, quantity: 1, unit_price: product.price_cents)
+
+    assert_no_difference "Product.count" do
+      delete admin_product_path(product)
+    end
+    assert_redirected_to admin_products_path
+    follow_redirect!
+    assert_match "Cannot delete", response.body
+  end
+
+  test "Delete buttons ask for confirmation through Turbo" do
+    sign_in @admin
+    get admin_products_path
+    assert_select "form[data-turbo-confirm]", count: Product.count
+  end
+
+  test "GET new renders the form" do
+    sign_in @admin
+    get new_admin_product_path
+    assert_response :success
+  end
+
+  test "GET edit shows the current price in dollars" do
+    sign_in @admin
+    get edit_admin_product_path(products(:tshirt))
+    assert_select "input[name='product[price]'][value='24.99']"
+  end
+
+  test "POST create with a blank price re-renders the form with errors" do
+    sign_in @admin
+    assert_no_difference "Product.count" do
+      post admin_products_path, params: { product: { name: "No Price", price: "" } }
+    end
+    assert_response :unprocessable_entity
+  end
+
   test "PATCH update changes product attributes" do
     sign_in @admin
     patch admin_product_path(products(:tshirt)), params: {
