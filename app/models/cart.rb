@@ -1,3 +1,5 @@
+# Session-backed rather than a table: shoppers don't log in, so there's no user to own a
+# cart row. Trade-off: the cart is tied to one browser.
 class Cart
   MAX_QUANTITY = 99
 

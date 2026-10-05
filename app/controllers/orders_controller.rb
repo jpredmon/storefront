@@ -13,6 +13,7 @@ class OrdersController < ApplicationController
     end
 
     @order = Order.new(order_params)
+    # Prices come from the database via the cart, never from submitted form fields.
     @order.total_cents = @cart.total_cents
     @order.status      = "pending"
 
