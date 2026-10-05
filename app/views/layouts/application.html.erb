@@ -35,7 +35,10 @@
     </div>
 
     <footer class="text-center text-muted py-4 mt-5 border-top">
-      <small>&copy; <%= Date.current.year %> StoreFront</small>
+      <small>
+        &copy; <%= Date.current.year %> StoreFront &middot;
+        <%= link_to "Admin", new_admin_admin_user_session_path, class: "text-muted" %>
+      </small>
     </footer>
   </body>
 </html>

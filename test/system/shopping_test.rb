@@ -47,6 +47,14 @@ class ShoppingTest < ApplicationSystemTestCase
     assert_text "Customer email can't be blank"
   end
 
+  test "admin login is linked from the storefront footer" do
+    visit root_path
+    within("footer") { click_on "Admin" }
+
+    assert_current_path new_admin_admin_user_session_path
+    assert_field "Email"
+  end
+
   test "flash message can be dismissed" do
     visit product_path(products(:poster))
     click_on "Add to Cart"
