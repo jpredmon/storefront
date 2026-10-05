@@ -41,6 +41,9 @@ class OrdersControllerTest < ActionDispatch::IntegrationTest
     follow_redirect!
     assert_response :success
     assert_select "h1", text: /Order Confirmed/
+    assert_match "Your order has been placed.", response.body
+    # The app sends no email, so the page must not promise one.
+    assert_no_match(/confirmation will be sent/i, response.body)
   end
 
   test "GET show returns 404 for an order not placed in this session" do
