@@ -20,7 +20,7 @@ Built with Rails 8.1.4, PostgreSQL, Bootstrap 5, and Minitest.
 - Devise authentication
 - Full CRUD for products (create, edit, delete)
 - Separate admin layout
-- Admin login at `/admin/login` (no public link by design)
+- Admin login at `/admin/login`, linked from the storefront footer
 
 ## Live deployment
 
@@ -60,6 +60,8 @@ Then open http://localhost:3000.
 
 ## Admin access
 
+Use the **Admin** link in the storefront footer, or go to `/admin/login` directly.
+
 **Local (after seeding):**
 - URL: http://localhost:3000/admin/login
 - Email: `admin@storefront.dev`
@@ -73,7 +75,7 @@ Then open http://localhost:3000.
 
 ```sh
 bin/rails test          # 62 model and controller tests
-bin/rails test:system   # 11 browser tests (requires Google Chrome)
+bin/rails test:system   # 12 browser tests (requires Google Chrome)
 ```
 
 - **Model and controller tests:** Product, Order, OrderItem and Cart, the public controllers (Products, Cart, CartItems, Orders), and Admin::Products.
@@ -100,3 +102,15 @@ GitHub Actions runs both suites on every pull request and every push to `master`
 - Products that appear in orders can't be deleted (`restrict_with_error`), preserving order history
 - An order confirmation page is only viewable from the browser session that placed the order
 - Order placement wrapped in a database transaction for atomicity
+
+## Known limitations
+
+This is a deliberately small store. What it doesn't do yet, and how each would be added:
+
+- **Admins can't view orders.** Orders and their items are stored, but the admin panel only manages products. Next step: an `Admin::OrdersController` (index/show) under `Admin::BaseController`, reusing the admin products patterns.
+- **Order status never changes.** Every order is created as `pending`. Next step: a status enum (pending/shipped/cancelled) with validation, updated from the admin order page.
+- **No confirmation emails.** Next step: an Action Mailer `OrderMailer`, delivered with `deliver_later` after the order transaction commits, with production configured to run background jobs (Solid Queue is installed but not wired up).
+- **No inventory.** Products have no stock count, so any quantity up to 99 can be ordered. Next step: a `stock` column, decremented inside the order transaction with a row lock (`product.lock!`) so two concurrent checkouts can't oversell.
+- **Carts and order confirmations are tied to one browser.** Both live in the session cookie, so they don't follow a customer to another device. Next step: customer accounts, or an emailed link with an unguessable order token.
+- **No admin login throttling.** Repeated failed logins aren't limited. Next step: Devise's `:lockable` module or rate limiting on the login endpoint.
+- **Free hosting.** Render's free tier sleeps after 15 minutes idle (the first request then takes ~30 seconds), and its free Postgres expires after 30 days.
